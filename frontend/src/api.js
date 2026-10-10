@@ -13,14 +13,22 @@ const post = (path, body) =>
 
 export const screenSite = (lat, lon, mw, name) => post("/screen", { lat, lon, mw, name }).then((r) => r.json());
 export const getProjects = () => call("/projects").then((r) => r.json());
-export const getOverlay = (name) => call(`/overlay/${name}`).then((r) => r.json());
+export const getOverlay = (name, bbox) => call(`/overlay/${name}?bbox=${bbox}`).then((r) => r.json());
 export const getAlerts = () => call("/alerts").then((r) => r.json());
 export const speak = (text) => post("/voice", { text }).then((r) => r.blob());
 
-// Place search (OpenStreetMap Nominatim), limited to the NJ + NY + DE area. Max ~1 request/second.
+const GEOAPIFY_KEY = import.meta.env.VITE_GEOAPIFY_KEY;
+
+// US place search: Geoapify if a key is set, else OpenStreetMap Nominatim (~1 req/s).
 export async function searchPlaces(q) {
+  if (GEOAPIFY_KEY) {
+    const params = new URLSearchParams({ text: q, filter: "countrycode:us", format: "json", limit: "5", apiKey: GEOAPIFY_KEY });
+    const res = await fetch(`https://api.geoapify.com/v1/geocode/search?${params}`);
+    if (!res.ok) return [];
+    return (await res.json()).results.map((p) => ({ label: p.formatted, lat: p.lat, lon: p.lon }));
+  }
   const params = new URLSearchParams({
-    q, format: "json", limit: "5", countrycodes: "us", viewbox: "-79.8,45.1,-71.8,38.4", bounded: "1",
+    q, format: "json", limit: "5", countrycodes: "us",
   });
   const res = await fetch(`https://nominatim.openstreetmap.org/search?${params}`);
   if (!res.ok) return [];

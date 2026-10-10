@@ -24,15 +24,18 @@ if os.getenv("VERCEL"):
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS layers (
     name TEXT PRIMARY KEY, title TEXT, url TEXT, where_clause TEXT, label_field TEXT,
-    states TEXT, scope TEXT, color TEXT
+    states TEXT, scope TEXT, color TEXT, out_fields TEXT
 );
 -- Data center projects shown on the map. source: "list" (projects.csv) or "nyiso" (queue file).
 CREATE TABLE IF NOT EXISTS projects (
     id INTEGER PRIMARY KEY, name TEXT, source TEXT, queue_id TEXT UNIQUE, county TEXT, state TEXT,
     lat REAL, lon REAL, mw REAL, approximate INTEGER, status TEXT, notes TEXT
 );
-CREATE TABLE IF NOT EXISTS grid (
-    state TEXT, county TEXT, egrid TEXT, egrid_name TEXT, co2_lb_per_mwh REAL, price_cents_kwh REAL
+CREATE TABLE IF NOT EXISTS egrid (
+    code TEXT PRIMARY KEY, name TEXT, co2_lb_per_mwh REAL
+);
+CREATE TABLE IF NOT EXISTS power_prices (
+    state TEXT PRIMARY KEY, cents_kwh REAL
 );
 CREATE TABLE IF NOT EXISTS estimate_params (
     key TEXT PRIMARY KEY, low REAL, high REAL, source TEXT
@@ -75,6 +78,11 @@ def init_db():
     """Create tables; load seed.yaml if the layers table is empty."""
     con = connect()
     con.executescript(SCHEMA)
+    for sql in ["ALTER TABLE layers ADD COLUMN out_fields TEXT", "ALTER TABLE screenings ADD COLUMN name TEXT"]:
+        try:   # columns added after the first version of the database
+            con.execute(sql)
+        except sqlite3.OperationalError:
+            pass
     seed = yaml.safe_load(SEED_PATH.read_text())
     # Layers are synced from seed.yaml on every start. If a layer's URL/filter changed,
     # drop its cached data so it is downloaded again.
@@ -84,25 +92,24 @@ def init_db():
             con.execute("DELETE FROM features WHERE layer=?", (l["name"],))
             con.execute("DELETE FROM coverage WHERE layer=?", (l["name"],))
         con.execute(
-            "INSERT OR REPLACE INTO layers VALUES (?,?,?,?,?,?,?,?)",
+            "INSERT OR REPLACE INTO layers (name, title, url, where_clause, label_field, states, scope, color, out_fields) "
+            "VALUES (?,?,?,?,?,?,?,?,?)",
             (l["name"], l["title"], l["url"], l["where"], l["label_field"],
-             ",".join(l["states"]), l["scope"], l["color"]),
+             ",".join(l["states"]), l["scope"], l["color"], l.get("out_fields")),
         )
     if con.execute("SELECT COUNT(*) FROM estimate_params").fetchone()[0] == 0:
         for p in seed["estimate_params"]:
             con.execute("INSERT INTO estimate_params VALUES (?,?,?,?)",
                         (p["key"], p["low"], p["high"], p["source"]))
-    con.execute("DELETE FROM grid")
-    for g in seed["grid"]:
-        con.execute("INSERT INTO grid VALUES (?,?,?,?,?,?)", (g["state"], g["county"], g["egrid"],
-                    g["egrid_name"], g["co2_lb_per_mwh"], g["price_cents_kwh"]))
+    con.execute("DELETE FROM egrid")
+    for g in seed["egrid"]:
+        con.execute("INSERT INTO egrid VALUES (?,?,?)", (g["code"], g["name"], g["co2_lb_per_mwh"]))
+    con.execute("DELETE FROM power_prices")
+    for p in seed["power_prices"]:
+        con.execute("INSERT INTO power_prices VALUES (?,?)", (p["state"], p["cents_kwh"]))
     con.execute("DELETE FROM projects WHERE source = 'known'")   # old format, now in projects.csv
     if con.execute("SELECT COUNT(*) FROM projects WHERE source='list'").fetchone()[0] == 0:
         load_project_list(con)
-    try:   # older databases: add the name column
-        con.execute("ALTER TABLE screenings ADD COLUMN name TEXT")
-    except sqlite3.OperationalError:
-        pass
     con.commit()
     con.close()
 

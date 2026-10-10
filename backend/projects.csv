@@ -1,8 +1,4 @@
 name,status,mw,address,town,county,state,lat,lon,approximate,source,notes
-STAMP data center (Project Double Reed),Planned,500,,Alabama,Genesee,NY,43.0880,-78.2280,1,Team research (verify),Contested; near Tonawanda Seneca Nation and Iroquois National Wildlife Refuge.
-Greenidge Generation,Operational,106,590 Plant Rd,Dresden,Yates,NY,42.6790,-76.9480,1,Team research (verify),Gas plant used for crypto mining on Seneca Lake; contested air/water permits.
-Lake Mariner (TeraWulf),Operational,500,,Barker,Niagara,NY,43.3600,-78.5950,1,Team research (verify),Crypto mining and HPC campus at former Somerset coal plant.
-Project Washington (Starwood Digital Ventures),Planned,1200,,Delaware City,New Castle,DE,39.5790,-75.6170,1,Team research (verify),Up to ~1.2 GW campus proposed near Delaware City; location approximate.
 Continent 8 Atlantic City DC3,Operational,,1 Convention Blvd,Atlantic City,Atlantic,NJ,39.364285,-74.422935,1,SJ Climate News NJ data center map (updated 2026-06-10) https://sjclimate.news/7420/essays/new-jersey-data-center-map/,
 Continent 8 Atlantic City DC2,Operational,,500 Boardwalk,Atlantic City,Atlantic,NJ,39.361616,-74.413659,0,SJ Climate News NJ data center map (updated 2026-06-10) https://sjclimate.news/7420/essays/new-jersey-data-center-map/,
 Whitelabel IT Solutions Data Center,Operational,,150 Atlantic St,Hackensack,Bergen,NJ,40.882841,-74.048861,0,SJ Climate News NJ data center map (updated 2026-06-10) https://sjclimate.news/7420/essays/new-jersey-data-center-map/,

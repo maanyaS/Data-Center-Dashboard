@@ -78,9 +78,9 @@ def call_llm(prompt):
     r = requests.post(
         f"{base}/chat/completions",
         headers={"Authorization": f"Bearer {os.getenv('LLM_API_KEY')}"},
-        json={"model": os.getenv("LLM_MODEL", "gemini-3.8-flash"), "temperature": 0.2,
+        json={"model": os.getenv("LLM_MODEL", "gemini-3.1-flash-lite"), "temperature": 0.2,
               "messages": [{"role": "user", "content": prompt}]},
-        timeout=60,
+        timeout=25,
     )
     r.raise_for_status()
     text = r.json()["choices"][0]["message"]["content"]
@@ -111,8 +111,10 @@ def write_briefs(findings, triggers, estimates):
             out = call_llm(PROMPT.format(disclaimer=DISCLAIMER, feedback=feedback,
                                          facts=json.dumps(facts(findings, triggers, estimates), indent=1)))
             problems = validate(out["developer"], valid) + validate(out["community"], valid)
-        except Exception as e:   # e.g. 503 when Gemini is overloaded -> wait and retry
+        except Exception as e:   # 503 overloaded -> wait and retry; 429 quota / timeout -> use template now
             print(f"[briefs] LLM error: {e}")
+            if "429" in str(e) or "timed out" in str(e).lower():
+                break
             time.sleep(2)
             continue
         if not problems:

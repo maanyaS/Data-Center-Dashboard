@@ -10,7 +10,8 @@ def evaluate(findings, state, mw, estimates=None):
     rules = yaml.safe_load(RULES_PATH.read_text(encoding="utf-8"))
     triggers = []
     for r in rules:
-        if state not in r.get("states", [state]) or mw < r.get("min_mw", 0):
+        states = r.get("states", ["*"])
+        if ("*" not in states and state not in states) or mw < r.get("min_mw", 0):
             continue
         # min_water_gpd: compare to the HIGH end of the on-site water estimate
         water_high = (estimates or {}).get("water_gal_per_day", {}).get("high", 0)

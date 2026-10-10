@@ -18,8 +18,13 @@ TO_DEG = Transformer.from_crs(5070, 4326, always_xy=True).transform
 SITE_RADIUS_M = 200          # "at site" = within 200 m of the pin (approximate footprint)
 RINGS_M = {"site": SITE_RADIUS_M, "1km": 1000, "5km": 5000}
 FETCH_RADIUS_KM = 8          # how much area to download around a site (a bit more than 5 km)
-REGION_BBOX = (-79.8, 38.4, -71.8, 45.1)   # NJ + NY + DE
-STATE_FIPS = {"34": "NJ", "36": "NY", "10": "DE"}
+REGION_BBOX = (-180, 17, -64, 72)   # all US states + PR
+STATE_FIPS = dict(zip(
+    "01 02 04 05 06 08 09 10 11 12 13 15 16 17 18 19 20 21 22 23 24 25 26 27 28 29 30 31 32 33 34 35 36 37 38 39 "
+    "40 41 42 44 45 46 47 48 49 50 51 53 54 55 56 72".split(),
+    "AL AK AZ AR CA CO CT DE DC FL GA HI ID IL IN IA KS KY LA ME MD MA MI MN MS MO MT NE NV NH NJ NM NY NC ND OH "
+    "OK OR PA RI SC SD TN TX UT VT VA WA WV WI WY PR".split()))
+NOT_SCREENED = ("counties", "egrid_subregions")   # region layers used only for lookups
 
 # Region overlays: every feature gets a 0-4 "level" (same 5-step color scale for both).
 RATING = {"Very Low": 0, "Relatively Low": 1, "Relatively Moderate": 2, "Relatively High": 3, "Very High": 4}
@@ -43,10 +48,12 @@ def overlay_detail(layer_name, props):
             f"community resilience {props.get('RESL_RATNG') or 'unknown'}.")
 
 
-def overlay_geojson(layer_name):
-    """All cached features of a region layer, with a 0-4 level, for the map overlay."""
+def overlay_geojson(layer_name, bbox):
+    """Features of a region layer inside the map view (bbox = minx, miny, maxx, maxy), with a 0-4 level."""
     feats = []
-    for r in db.rows("SELECT label, props, geojson FROM features WHERE layer=?", (layer_name,)):
+    minx, miny, maxx, maxy = bbox
+    for r in db.rows("SELECT label, props, geojson FROM features WHERE layer=? "
+                     "AND maxx>=? AND minx<=? AND maxy>=? AND miny<=?", (layer_name, minx, maxx, miny, maxy)):
         level = overlay_level(layer_name, json.loads(r["props"]))
         if level is not None:
             feats.append({"type": "Feature", "geometry": json.loads(r["geojson"]),
@@ -62,12 +69,12 @@ def bbox_around(lat, lon, km):
     return (lon - dlon, lat - dlat, lon + dlon, lat + dlat)
 
 
-def fetch_arcgis(url, where, bbox, simplify_deg=0.00002):
+def fetch_arcgis(url, where, bbox, simplify_deg=0.00002, out_fields="*"):
     """Generic ArcGIS REST fetcher: layer URL + bbox -> list of GeoJSON features (paged)."""
-    features, offset, seen_first = [], 0, None
+    features, offset, seen_first, page_size = [], 0, None, 0
     for _ in range(100):  # safety cap on pages
         params = {
-            "where": where, "outFields": "*", "f": "geojson", "outSR": 4326,
+            "where": where, "outFields": out_fields, "f": "geojson", "outSR": 4326,
             "geometry": ",".join(map(str, bbox)), "geometryType": "esriGeometryEnvelope",
             "inSR": 4326, "spatialRel": "esriSpatialRelIntersects",
             "maxAllowableOffset": simplify_deg,
@@ -81,13 +88,15 @@ def fetch_arcgis(url, where, bbox, simplify_deg=0.00002):
         page = data.get("features", [])
         if not page:
             break
-        first = json.dumps(page[0].get("properties"), sort_keys=True)
+        first = json.dumps(page[0], sort_keys=True)   # whole feature incl. geometry
         if first == seen_first:   # server ignores resultOffset -> stop instead of looping forever
             break
         seen_first = first
         features += page
+        # Some servers don't flag "more pages": keep going while pages come back full
+        page_size = max(page_size, len(page))
         more = data.get("exceededTransferLimit") or data.get("properties", {}).get("exceededTransferLimit")
-        if not more:
+        if not more and len(page) < page_size:
             break
         offset += len(page)
     return features
@@ -104,12 +113,15 @@ def store_features(layer, features):
         if not f.get("geometry"):
             continue
         geom = shape(f["geometry"])
+        if layer["scope"] == "region":   # national layers: simplify to ~300 m to keep the DB small
+            geom = geom.simplify(0.003, preserve_topology=True)
+            f["geometry"] = mapping(geom)
         props = f.get("properties") or {}
         src_id = str(f.get("id") or props.get("OBJECTID") or props.get("objectid") or hash(geom.wkb))
         label = str(props.get(layer["label_field"]) or "")
         minx, miny, maxx, maxy = geom.bounds
         keep_props = props if layer["scope"] == "region" else {}   # only counties need attributes
-        gj = {"type": f["geometry"]["type"], "coordinates": round_coords(f["geometry"]["coordinates"])}
+        gj = {"type": f["geometry"]["type"], "coordinates": round_coords(json.loads(json.dumps(f["geometry"]["coordinates"])))}
         con.execute(
             "INSERT OR IGNORE INTO features VALUES (?,?,?,?,?,?,?,?,?)",
             (layer["name"], src_id, label, json.dumps(keep_props), json.dumps(gj, separators=(",", ":")),
@@ -130,7 +142,8 @@ def download(layer, bbox, simplify_deg=0.00002):
     if not layer["url"] or is_covered(layer["name"], bbox):
         return None
     try:
-        feats = fetch_arcgis(layer["url"], layer["where_clause"], bbox, simplify_deg)
+        fields = layer["out_fields"] or (layer["label_field"] if layer["scope"] == "site" else "*")
+        feats = fetch_arcgis(layer["url"], layer["where_clause"], bbox, simplify_deg, fields)
     except Exception as e:
         print(f"[spatial] {layer['name']} download failed: {e}")
         return str(e)
@@ -142,14 +155,16 @@ def download(layer, bbox, simplify_deg=0.00002):
 
 def ensure_region():
     for layer in db.get_layers("region"):
-        download(layer, REGION_BBOX, simplify_deg=0.001)
+        download(layer, REGION_BBOX, simplify_deg=0.003)   # ~300 m, national layers
 
 
-def ensure_area(lat, lon):
-    """Make sure every site-scope layer is cached around this point. Returns {layer: error}."""
+def ensure_area(lat, lon, state=None):
+    """Make sure the site-scope layers for this state are cached around the point. Returns {layer: error}."""
     bbox = bbox_around(lat, lon, FETCH_RADIUS_KM)
     errors = {}
     for layer in db.get_layers("site"):
+        if state and not applies(layer, state):
+            continue
         err = download(layer, bbox)
         if err:
             errors[layer["name"]] = err
@@ -166,14 +181,25 @@ def features_near(layer_name, lat, lon, km):
         (layer_name, minx, maxx, miny, maxy))
 
 
+def region_props(layer_name, lat, lon):
+    """Attributes of the region-layer polygon containing the point (or None)."""
+    pt = Point(lon, lat)
+    for f in features_near(layer_name, lat, lon, 1):
+        if shape(json.loads(f["geojson"])).contains(pt):
+            return json.loads(f["props"])
+    return None
+
+
 def locate(lat, lon):
     """Return (state, county) for a point using the cached counties layer."""
-    pt = Point(lon, lat)
-    for f in features_near("counties", lat, lon, 1):
-        if shape(json.loads(f["geojson"])).contains(pt):
-            props = json.loads(f["props"])
-            return STATE_FIPS.get(str(props.get("STATE"))), props.get("NAME")
-    return None, None
+    props = region_props("counties", lat, lon)
+    if not props:
+        return None, None
+    return STATE_FIPS.get(str(props.get("STATE"))), props.get("NAME")
+
+
+def applies(layer, state):
+    return "*" in layer["states"] or state in layer["states"]
 
 
 def ring_geojson(lat, lon):
@@ -197,11 +223,11 @@ def screen_point(lat, lon):
     state, county = locate(lat, lon)
     if state is None:
         return None, None, []
-    errors = ensure_area(lat, lon)
+    errors = ensure_area(lat, lon, state)
     center = transform(TO_M, Point(lon, lat))
     findings = []
     for layer in db.get_layers("site"):
-        if state not in layer["states"]:
+        if not applies(layer, state):
             continue
         base = {"id": f"F{len(findings) + 1}", "layer": layer["name"], "title": layer["title"],
                 "color": layer["color"], "source": layer["url"] or "not loaded", "geometry": None}
@@ -239,7 +265,7 @@ def screen_point(lat, lon):
     # Context at the pin from region layers (water stress, climate risk)
     pt = Point(lon, lat)
     for layer in db.get_layers("region"):
-        if layer["name"] == "counties":
+        if layer["name"] in NOT_SCREENED:
             continue
         base = {"id": f"F{len(findings) + 1}", "layer": layer["name"], "title": layer["title"],
                 "color": layer["color"], "source": layer["url"], "geometry": None, "distance_m": None}

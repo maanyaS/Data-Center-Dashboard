@@ -2,7 +2,11 @@ import { useEffect, useRef, useState } from "react";
 import maplibregl from "maplibre-gl";
 import { getOverlay } from "./api";
 
-const STYLE = "https://basemaps.cartocdn.com/gl/positron-gl-style/style.json";
+// Basemap: Geoapify if VITE_GEOAPIFY_KEY is set (frontend/.env), else free CARTO Positron
+const GEOAPIFY_KEY = import.meta.env.VITE_GEOAPIFY_KEY;
+const STYLE = GEOAPIFY_KEY
+  ? `https://maps.geoapify.com/v1/styles/positron/style.json?apiKey=${GEOAPIFY_KEY}`
+  : "https://basemaps.cartocdn.com/gl/positron-gl-style/style.json";
 const EMPTY = { type: "FeatureCollection", features: [] };
 
 // Map overlays (same 0-4 level scale, low -> high)
@@ -25,6 +29,15 @@ function bounds(geometry) {
   return b;
 }
 
+function loadOverlay(m, name) {
+  const src = m.getSource("overlay");
+  if (!src) return;
+  if (!name) return src.setData(EMPTY);
+  const b = m.getBounds();
+  getOverlay(name, [b.getWest(), b.getSouth(), b.getEast(), b.getNorth()].map((x) => x.toFixed(3)).join(","))
+    .then((g) => src.setData(g)).catch(() => {});
+}
+
 // Existing projects -> GeoJSON points for the map
 const projectsGeojson = (projects) => ({
   type: "FeatureCollection",
@@ -39,12 +52,12 @@ export default function MapView({ pin, projects, onPick, onProject, result, sele
   const map = useRef(null);
   const marker = useRef(null);
   const handlers = useRef({});
-  handlers.current = { onPick, onSelect, onProject, projects };
   const [overlay, setOverlay] = useState(""); // "", "water_stress", "climate_risk"
+  handlers.current = { onPick, onSelect, onProject, projects, overlay };
 
   // Create the map once
   useEffect(() => {
-    const m = new maplibregl.Map({ container: box.current, style: STYLE, center: [-75.5, 41.8], zoom: 6 });
+    const m = new maplibregl.Map({ container: box.current, style: STYLE, center: [-96, 38.5], zoom: 3.6 });
     map.current = m;
     marker.current = new maplibregl.Marker({ color: "#059669" });
     m.on("load", () => {
@@ -77,6 +90,7 @@ export default function MapView({ pin, projects, onPick, onProject, result, sele
       });
       m.on("mouseleave", "projects", () => { m.getCanvas().style.cursor = ""; tip.remove(); });
     });
+    m.on("moveend", () => loadOverlay(m, handlers.current.overlay));
     m.on("click", (e) => {
       const proj = m.queryRenderedFeatures(e.point, { layers: ["projects"] })[0];
       if (proj) return handlers.current.onProject(handlers.current.projects.find((p) => p.id === proj.properties.id));
@@ -94,12 +108,8 @@ export default function MapView({ pin, projects, onPick, onProject, result, sele
     map.current.flyTo({ center: [pin.lon, pin.lat], zoom: Math.max(map.current.getZoom(), 12) });
   }, [pin]);
 
-  // Overlay (downloaded when toggled on)
-  useEffect(() => {
-    const src = map.current.getSource("overlay");
-    if (!overlay) return src?.setData(EMPTY);
-    getOverlay(overlay).then((g) => map.current.getSource("overlay")?.setData(g)).catch(() => {});
-  }, [overlay]);
+  // Overlay: only the part inside the current view is downloaded (re-loaded after panning/zooming)
+  useEffect(() => loadOverlay(map.current, overlay), [overlay]);
 
   // Project pins (data arrives after the map may already be loaded)
   useEffect(() => {
@@ -133,7 +143,7 @@ export default function MapView({ pin, projects, onPick, onProject, result, sele
     <>
       <div ref={box} style={{ position: "absolute", inset: 0 }} />
       <div className="absolute top-3 left-3 rounded-md bg-white/95 px-3 py-2 text-xs shadow">
-        <div className="flex items-center gap-2"><Dot c="#7c3aed" /> Known project (NJ / NY / DE list)</div>
+        <div className="flex items-center gap-2"><Dot c="#7c3aed" /> Known project (FracTracker / NJ list)</div>
         <div className="flex items-center gap-2"><Dot c="#f97316" /> NYISO queue (approx. county location)</div>
         <div className="flex items-center gap-2"><Dot c="#059669" /> Your pin</div>
       </div>

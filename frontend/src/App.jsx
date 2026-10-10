@@ -92,7 +92,7 @@ export default function App() {
                 {!pin && (
                   <p className="rounded-md bg-slate-50 p-3 text-sm text-slate-600">
                     Click a <b className="text-violet-600">project pin</b> to screen a known data center, or click
-                    anywhere in NJ / NY / DE to test a <b className="text-emerald-600">proposed</b> one.
+                    anywhere in the US to test a <b className="text-emerald-600">proposed</b> one.
                   </p>
                 )}
 
@@ -142,7 +142,7 @@ function ProjectCard({ p }) {
     <div className="rounded-md border border-violet-200 bg-violet-50 p-3 text-sm">
       <div className="flex justify-between gap-2">
         <span className="font-medium text-violet-900">{p.name}</span>
-        <span className="text-xs text-violet-700">{p.source === "nyiso" ? "NYISO queue" : "Project list"}</span>
+        <span className="text-xs text-violet-700">{{ nyiso: "NYISO queue", fractracker: "FracTracker Alliance", list: "SJ Climate News list" }[p.source] || p.source}</span>
       </div>
       <div className="text-xs text-violet-700">{p.county}, {p.state}{p.status ? ` · ${p.status}` : ""}</div>
       {p.notes && <p className="mt-1 text-xs text-slate-600">{p.notes}</p>}

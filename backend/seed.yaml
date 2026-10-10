@@ -1,122 +1,361 @@
-# Seed data loaded into the SQLite database (data/sitecheck.db) on first run.
-# Edit this file, then delete data/sitecheck.db (or run `python -m scripts.reset_db`) to reload.
+# Seed data loaded into the SQLite database (data/sitecheck.db). Layers, eGRID and prices are re-synced
+# from this file on every server start; changing a layer's url/where re-downloads it.
+#
+# layers:
+#   scope: "site"   -> fetched around each screened site, cached in the DB
+#          "region" -> fetched once for the whole US (context layers, map overlays)
+#   states: ["*"] = everywhere, or a list of state codes
+#   out_fields: attributes to download (default: just label_field for site layers)
+# egrid: EPA eGRID2023 rev2 summary Table 1, CO2 output emission rate (lb/MWh) per subregion.
+# power_prices: EIA avgprice_annual.xlsx, 2020 industrial average (cents/kWh).
+# estimate_params: VERIFY against LBNL 2024 US Data Center Energy Usage Report.
 
-# GIS layers to screen against.
-#   scope: "site"   -> fetched around each screened site (6 km box), cached in the DB
-#          "region" -> fetched once for all of NJ + NY (small layers only)
-#   url: ArcGIS REST layer URL (".../MapServer/<id>" or ".../FeatureServer/<id>").
-#        Leave "" if unknown yet -> findings for that layer say "unknown".
-#   label_field: attribute shown in finding text.
 layers:
-  - name: fema_flood
-    title: FEMA flood hazard zone (100-yr)
-    url: https://hazards.fema.gov/arcgis/rest/services/public/NFHL/MapServer/28
-    where: "SFHA_TF = 'T'"
-    label_field: FLD_ZONE
-    states: [NJ, NY, DE]
-    scope: site
-    color: "#2563eb"
-  - name: nwi_wetlands
-    title: USFWS National Wetlands Inventory
-    url: https://fwspublicservices.wim.usgs.gov/wetlandsmapservice/rest/services/Wetlands/MapServer/0
-    where: "1=1"
-    label_field: WETLAND_TYPE
-    states: [NJ, NY, DE]
-    scope: site
-    color: "#059669"
-  - name: nj_wetlands
-    title: NJDEP freshwater wetlands (2012)
-    url: https://mapsdep.nj.gov/arcgis/rest/services/Features/Land_lu/MapServer/2
-    where: "1=1"
-    label_field: LABEL12
-    states: [NJ]
-    scope: site
-    color: "#10b981"
-  - name: nj_open_space
-    title: NJ state protected open space
-    url: https://mapsdep.nj.gov/arcgis/rest/services/Applications/DEP_NLT/MapServer/1
-    where: "1=1"
-    label_field: FEATURE_NAME
-    states: [NJ]
-    scope: site
-    color: "#65a30d"
-  - name: ny_wetlands
-    title: NYSDEC regulated freshwater wetlands
-    url: https://gisservices.dec.ny.gov/arcgis/rest/services/Wetlands/MapServer/0
-    where: "1=1"
-    label_field: CLASS
-    states: [NY]
-    scope: site
-    color: "#0d9488"
-  - name: protected_areas
-    title: USGS PAD-US protected areas
-    url: https://services.arcgis.com/v01gqwM5QqNysAAi/ArcGIS/rest/services/Fee_Managers_PADUS/FeatureServer/0  # PAD-US 4.1 fee lands only
-    where: "1=1"
-    label_field: Unit_Nm
-    states: [NJ, NY, DE]
-    scope: site
-    color: "#84cc16"
-  - name: critical_habitat
-    title: USFWS critical habitat
-    url: https://services.arcgis.com/QVENGdaPbd4LUkLV/ArcGIS/rest/services/USFWS_Critical_Habitat/FeatureServer/0  # final; proposed = /2
-    where: "1=1"
-    label_field: comname
-    states: [NJ, NY, DE]
-    scope: site
-    color: "#dc2626"
-  # Region-wide context layers: looked up at the pin + shown as map overlays.
-  - name: water_stress
-    title: Baseline water stress (WRI Aqueduct 4.0)
-    url: https://services.arcgis.com/P3ePLMYs2RVChkJx/arcgis/rest/services/aqueduct_water_risk/FeatureServer/1
-    where: "1=1"
-    label_field: bws_label
-    states: [NJ, NY, DE]
-    scope: region
-    color: "#0284c7"
-  - name: climate_risk
-    title: FEMA National Risk Index (county)
-    url: https://services.arcgis.com/XG15cJAlne2vxtgt/arcgis/rest/services/National_Risk_Index_Counties/FeatureServer/0
-    where: "STATEABBRV IN ('NJ','NY','DE')"
-    label_field: RISK_RATNG
-    states: [NJ, NY, DE]
-    scope: region
-    color: "#9333ea"
-  # Not screened; used to find which state/county a point is in (and county centroids for alerts).
-  - name: counties
-    title: US Census counties
-    url: https://tigerweb.geo.census.gov/arcgis/rest/services/TIGERweb/State_County/MapServer/1
-    where: "STATE IN ('34','36','10')"
-    label_field: NAME
-    states: [NJ, NY, DE]
-    scope: region
-    color: "#6b7280"
-
-# Demand estimate assumptions. VERIFY against LBNL 2024 US Data Center Energy Usage Report.
+- name: fema_flood
+  title: FEMA flood hazard zone (100-yr)
+  url: https://hazards.fema.gov/arcgis/rest/services/public/NFHL/MapServer/28
+  where: SFHA_TF = 'T'
+  label_field: FLD_ZONE
+  states:
+  - '*'
+  scope: site
+  color: '#2563eb'
+- name: nwi_wetlands
+  title: USFWS National Wetlands Inventory
+  url: https://fwspublicservices.wim.usgs.gov/wetlandsmapservice/rest/services/Wetlands/MapServer/0
+  where: 1=1
+  label_field: WETLAND_TYPE
+  states:
+  - '*'
+  scope: site
+  color: '#059669'
+- name: nj_wetlands
+  title: NJDEP freshwater wetlands (2012)
+  url: https://mapsdep.nj.gov/arcgis/rest/services/Features/Land_lu/MapServer/2
+  where: 1=1
+  label_field: LABEL12
+  states:
+  - NJ
+  scope: site
+  color: '#10b981'
+- name: nj_open_space
+  title: NJ state, local and nonprofit open space
+  url: https://services1.arcgis.com/QWdNfRs7lkPq4g4Q/arcgis/rest/services/Open_Space/FeatureServer/66
+  where: 1=1
+  label_field: NAME_LABEL
+  states:
+  - NJ
+  scope: site
+  color: '#65a30d'
+- name: ny_wetlands
+  title: NYSDEC regulated freshwater wetlands
+  url: https://gisservices.dec.ny.gov/arcgis/rest/services/Wetlands/MapServer/0
+  where: 1=1
+  label_field: CLASS
+  states:
+  - NY
+  scope: site
+  color: '#0d9488'
+- name: protected_areas
+  title: USGS PAD-US protected areas
+  url: https://services.arcgis.com/v01gqwM5QqNysAAi/ArcGIS/rest/services/Fee_Managers_PADUS/FeatureServer/0
+  where: 1=1
+  label_field: Unit_Nm
+  states:
+  - '*'
+  scope: site
+  color: '#84cc16'
+- name: critical_habitat
+  title: USFWS critical habitat
+  url: https://services.arcgis.com/QVENGdaPbd4LUkLV/ArcGIS/rest/services/USFWS_Critical_Habitat/FeatureServer/0
+  where: 1=1
+  label_field: comname
+  states:
+  - '*'
+  scope: site
+  color: '#dc2626'
+- name: nj_highlands
+  title: NJ Highlands Preservation Area
+  label_field: REGION
+  states:
+  - NJ
+  color: '#a16207'
+  url: https://services6.arcgis.com/ZrVlS0wslq8Nvq5I/arcgis/rest/services/Preservation_and_Planning_Area/FeatureServer/1
+  where: REGION = 'Highlands Preservation Area'
+  scope: site
+- name: nj_pinelands
+  title: NJ Pinelands Area
+  label_field: JURISDICTION
+  states:
+  - NJ
+  color: '#15803d'
+  url: https://services1.arcgis.com/nCm6SZaiGMuGX35l/arcgis/rest/services/Pinelands_Protection_Act_1979/FeatureServer/0
+  where: 1=1
+  scope: site
+- name: nj_cafra
+  title: NJ CAFRA coastal zone
+  label_field: COAST_PA
+  states:
+  - NJ
+  color: '#0891b2'
+  url: https://mapsdep.nj.gov/arcgis/rest/services/Features/Land_CAFRA_coast/MapServer/2
+  where: 1=1
+  scope: site
+- name: ny_protected
+  title: NY Protected Areas Database (NYPAD)
+  label_field: Unit_Nm
+  states:
+  - NY
+  color: '#4d7c0f'
+  url: https://services6.arcgis.com/DZHaqZm9cxOD4CWM/arcgis/rest/services/NYPAD_view/FeatureServer/0
+  where: 1=1
+  scope: site
+- name: de_wetlands
+  title: Delaware wetlands (2017, DNREC)
+  label_field: ATTRIBUTE
+  states:
+  - DE
+  color: '#047857'
+  url: https://enterprise.firstmap.delaware.gov/arcgis/rest/services/Hydrology/DE_Wetlands/FeatureServer/6
+  where: 1=1
+  scope: site
+- name: water_stress
+  title: Baseline water stress (WRI Aqueduct 4.0)
+  url: https://services.arcgis.com/P3ePLMYs2RVChkJx/arcgis/rest/services/aqueduct_water_risk/FeatureServer/1
+  where: gid_0 = 'USA'
+  label_field: bws_label
+  states:
+  - '*'
+  scope: region
+  color: '#0284c7'
+  out_fields: bws_cat,bws_label,bws_score
+- name: climate_risk
+  title: FEMA National Risk Index (county)
+  url: https://services.arcgis.com/XG15cJAlne2vxtgt/arcgis/rest/services/National_Risk_Index_Counties/FeatureServer/0
+  where: 1=1
+  label_field: RISK_RATNG
+  states:
+  - '*'
+  scope: region
+  color: '#9333ea'
+  out_fields: COUNTY,STATEABBRV,RISK_RATNG,RISK_SCORE,SOVI_RATNG,RESL_RATNG
+- name: counties
+  title: US Census counties
+  url: https://tigerweb.geo.census.gov/arcgis/rest/services/TIGERweb/State_County/MapServer/1
+  where: 1=1
+  label_field: NAME
+  states:
+  - '*'
+  scope: region
+  color: '#6b7280'
+  out_fields: NAME,STATE,GEOID
+- name: egrid_subregions
+  title: EPA eGRID2023 subregions
+  label_field: Subregion
+  states:
+  - '*'
+  color: '#64748b'
+  url: https://services.arcgis.com/cJ9YHowT8TU7DUyn/arcgis/rest/services/eGRID2023_Subregions/FeatureServer/0
+  where: 1=1
+  scope: region
+  out_fields: Subregion
 estimate_params:
-  - key: load_factor
-    low: 0.5
-    high: 0.8
-    source: "Assumed average IT utilization of planned MW (team assumption)"
-  - key: pue
-    low: 1.15
-    high: 1.5
-    source: "LBNL 2024 US Data Center Energy Usage Report - PUE range (verify)"
-  - key: wue_l_per_kwh
-    low: 0.2
-    high: 1.0
-    source: "LBNL 2024 US Data Center Energy Usage Report - on-site water use per IT kWh (verify)"
-
-# Grid region per state/county ("*" = rest of state): carbon rate + industrial power price.
-# CO2: EPA eGRID2023 rev2 summary Table 1 (lb CO2 per MWh output). Price: EIA avgprice_annual.xlsx, 2020 industrial.
-grid:
-  - {state: NJ, county: "*", egrid: RFCE, egrid_name: "RFC East", co2_lb_per_mwh: 596.904, price_cents_kwh: 10.01}
-  - {state: DE, county: "*", egrid: RFCE, egrid_name: "RFC East", co2_lb_per_mwh: 596.904, price_cents_kwh: 6.7}
-  - {state: NY, county: "*", egrid: NYUP, egrid_name: "NPCC Upstate NY", co2_lb_per_mwh: 242.089, price_cents_kwh: 5.54}
-  - {state: NY, county: "Bronx", egrid: NYCW, egrid_name: "NPCC NYC/Westchester", co2_lb_per_mwh: 864.469, price_cents_kwh: 5.54}
-  - {state: NY, county: "Kings", egrid: NYCW, egrid_name: "NPCC NYC/Westchester", co2_lb_per_mwh: 864.469, price_cents_kwh: 5.54}
-  - {state: NY, county: "New York", egrid: NYCW, egrid_name: "NPCC NYC/Westchester", co2_lb_per_mwh: 864.469, price_cents_kwh: 5.54}
-  - {state: NY, county: "Queens", egrid: NYCW, egrid_name: "NPCC NYC/Westchester", co2_lb_per_mwh: 864.469, price_cents_kwh: 5.54}
-  - {state: NY, county: "Richmond", egrid: NYCW, egrid_name: "NPCC NYC/Westchester", co2_lb_per_mwh: 864.469, price_cents_kwh: 5.54}
-  - {state: NY, county: "Westchester", egrid: NYCW, egrid_name: "NPCC NYC/Westchester", co2_lb_per_mwh: 864.469, price_cents_kwh: 5.54}
-  - {state: NY, county: "Nassau", egrid: NYLI, egrid_name: "NPCC Long Island", co2_lb_per_mwh: 1180.672, price_cents_kwh: 5.54}
-  - {state: NY, county: "Suffolk", egrid: NYLI, egrid_name: "NPCC Long Island", co2_lb_per_mwh: 1180.672, price_cents_kwh: 5.54}
+- key: load_factor
+  low: 0.5
+  high: 0.8
+  source: Assumed average IT utilization of planned MW (team assumption)
+- key: pue
+  low: 1.15
+  high: 1.5
+  source: LBNL 2024 US Data Center Energy Usage Report - PUE range (verify)
+- key: wue_l_per_kwh
+  low: 0.2
+  high: 1.0
+  source: LBNL 2024 US Data Center Energy Usage Report - on-site water use per IT kWh (verify)
+egrid:
+- code: AKGD
+  name: ASCC Alaska Grid
+  co2_lb_per_mwh: 899.633
+- code: AKMS
+  name: ASCC Miscellaneous
+  co2_lb_per_mwh: 520.483
+- code: AZNM
+  name: WECC Southwest
+  co2_lb_per_mwh: 703.703
+- code: CAMX
+  name: WECC California
+  co2_lb_per_mwh: 428.464
+- code: ERCT
+  name: ERCOT All
+  co2_lb_per_mwh: 733.862
+- code: FRCC
+  name: FRCC All
+  co2_lb_per_mwh: 782.262
+- code: HIMS
+  name: HICC Miscellaneous
+  co2_lb_per_mwh: 1123.371
+- code: HIOA
+  name: HICC Oahu
+  co2_lb_per_mwh: 1489.548
+- code: MROE
+  name: MRO East
+  co2_lb_per_mwh: 1397.313
+- code: MROW
+  name: MRO West
+  co2_lb_per_mwh: 920.13
+- code: NEWE
+  name: NPCC New England
+  co2_lb_per_mwh: 539.275
+- code: NWPP
+  name: WECC Northwest
+  co2_lb_per_mwh: 631.735
+- code: NYCW
+  name: NPCC NYC/Westchester
+  co2_lb_per_mwh: 864.469
+- code: NYLI
+  name: NPCC Long Island
+  co2_lb_per_mwh: 1180.672
+- code: NYUP
+  name: NPCC Upstate NY
+  co2_lb_per_mwh: 242.089
+- code: PRMS
+  name: Puerto Rico Miscellaneous
+  co2_lb_per_mwh: 1543.073
+- code: RFCE
+  name: RFC East
+  co2_lb_per_mwh: 596.904
+- code: RFCM
+  name: RFC Michigan
+  co2_lb_per_mwh: 970.617
+- code: RFCW
+  name: RFC West
+  co2_lb_per_mwh: 911.424
+- code: RMPA
+  name: WECC Rockies
+  co2_lb_per_mwh: 1036.601
+- code: SPNO
+  name: SPP North
+  co2_lb_per_mwh: 861.999
+- code: SPSO
+  name: SPP South
+  co2_lb_per_mwh: 872.042
+- code: SRMV
+  name: SERC Mississippi Valley
+  co2_lb_per_mwh: 739.72
+- code: SRMW
+  name: SERC Midwest
+  co2_lb_per_mwh: 1239.839
+- code: SRSO
+  name: SERC South
+  co2_lb_per_mwh: 842.329
+- code: SRTV
+  name: SERC Tennessee Valley
+  co2_lb_per_mwh: 898.079
+- code: SRVC
+  name: SERC Virginia/Carolina
+  co2_lb_per_mwh: 593.419
+power_prices:
+- state: AK
+  cents_kwh: 15.88
+- state: AL
+  cents_kwh: 5.87
+- state: AR
+  cents_kwh: 5.89
+- state: AZ
+  cents_kwh: 6.07
+- state: CA
+  cents_kwh: 14.27
+- state: CO
+  cents_kwh: 7.48
+- state: CT
+  cents_kwh: 13.07
+- state: DC
+  cents_kwh: 7.99
+- state: DE
+  cents_kwh: 6.7
+- state: FL
+  cents_kwh: 7.15
+- state: GA
+  cents_kwh: 5.77
+- state: HI
+  cents_kwh: 24.45
+- state: IA
+  cents_kwh: 6.43
+- state: ID
+  cents_kwh: 6.23
+- state: IL
+  cents_kwh: 6.7
+- state: IN
+  cents_kwh: 6.98
+- state: KS
+  cents_kwh: 7.3
+- state: KY
+  cents_kwh: 5.31
+- state: LA
+  cents_kwh: 4.88
+- state: MA
+  cents_kwh: 14.51
+- state: MD
+  cents_kwh: 7.81
+- state: ME
+  cents_kwh: 8.86
+- state: MI
+  cents_kwh: 7.24
+- state: MN
+  cents_kwh: 7.67
+- state: MO
+  cents_kwh: 6.84
+- state: MS
+  cents_kwh: 5.63
+- state: MT
+  cents_kwh: 5.18
+- state: NC
+  cents_kwh: 6.31
+- state: ND
+  cents_kwh: 7.26
+- state: NE
+  cents_kwh: 7.38
+- state: NH
+  cents_kwh: 13.11
+- state: NJ
+  cents_kwh: 10.01
+- state: NM
+  cents_kwh: 5.58
+- state: NV
+  cents_kwh: 5.61
+- state: NY
+  cents_kwh: 5.54
+- state: OH
+  cents_kwh: 6.16
+- state: OK
+  cents_kwh: 4.61
+- state: OR
+  cents_kwh: 5.7
+- state: PA
+  cents_kwh: 6.16
+- state: RI
+  cents_kwh: 15.76
+- state: SC
+  cents_kwh: 5.98
+- state: SD
+  cents_kwh: 7.79
+- state: TN
+  cents_kwh: 5.33
+- state: TX
+  cents_kwh: 5.07
+- state: US
+  cents_kwh: 6.67
+- state: UT
+  cents_kwh: 5.9
+- state: VA
+  cents_kwh: 6.28
+- state: VT
+  cents_kwh: 11.2
+- state: WA
+  cents_kwh: 5.08
+- state: WI
+  cents_kwh: 7.29
+- state: WV
+  cents_kwh: 6.09
+- state: WY
+  cents_kwh: 6.88

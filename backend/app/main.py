@@ -30,8 +30,9 @@ class ScreenRequest(BaseModel):
 def run_screen(lat, lon, mw, name=""):
     state, county, findings = spatial.screen_point(lat, lon)
     if state is None:
-        raise HTTPException(400, "Site is outside New Jersey / New York / Delaware coverage.")
-    est = estimates.estimate(mw, state, county)
+        raise HTTPException(400, "Site is outside US coverage.")
+    egrid = (spatial.region_props("egrid_subregions", lat, lon) or {}).get("Subregion")
+    est = estimates.estimate(mw, state, egrid)
     triggers = rules.evaluate(findings, state, mw, est)
     result = {
         "site": {"name": name, "lat": lat, "lon": lon, "mw": mw, "state": state, "county": county},
@@ -53,6 +54,10 @@ def screen(req: ScreenRequest):
 @app.get("/projects")
 def projects():
     out = db.rows("SELECT * FROM projects WHERE lat IS NOT NULL ORDER BY name")
+    # Same site in two sources: FracTracker (exact location, MW, pushback info) wins over projects.csv
+    ft = [p for p in out if p["source"] == "fractracker"]
+    out = [p for p in out if p["source"] != "list" or not any(
+        abs(p["lat"] - f["lat"]) < 0.003 and abs(p["lon"] - f["lon"]) < 0.004 for f in ft)]   # ~300 m
     seen = {}   # pins on the exact same spot are fanned out (~60 m) so each one is visible
     for p in out:
         key = (round(p["lat"], 5), round(p["lon"], 5))
@@ -69,10 +74,11 @@ def layers():
 
 
 @app.get("/overlay/{name}")
-def overlay(name: str):
+def overlay(name: str, bbox: str = "-180,17,-64,72"):
+    """bbox = minLon,minLat,maxLon,maxLat of the current map view."""
     if name not in ("water_stress", "climate_risk"):
         raise HTTPException(404, "Unknown overlay")
-    return spatial.overlay_geojson(name)
+    return spatial.overlay_geojson(name, [float(x) for x in bbox.split(",")])
 
 
 @app.get("/alerts")

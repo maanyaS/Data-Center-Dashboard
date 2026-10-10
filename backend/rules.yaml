@@ -1,14 +1,14 @@
 # Rules: if a finding matches, flag a LIKELY review trigger.
 # A rule matches when a finding from one of `layers` falls in one of `buffers`
-# (site / 1km / 5km), the site is in one of `states`, and mw >= min_mw.
+# (site / 1km / 5km), the site is in one of `states` ('*' = any state), and mw >= min_mw.
 # `always: true` rules only check state + min_mw (no finding needed).
 # `min_water_gpd`: applies if the high end of the water estimate is at least this (gallons/day).
 # VERIFY every citation before the demo.
 
 - id: R1
-  layers: [nwi_wetlands, nj_wetlands, ny_wetlands]
+  layers: [nwi_wetlands, nj_wetlands, ny_wetlands, de_wetlands]
   buffers: [site]
-  states: [NJ, NY, DE]
+  states: ['*']
   trigger: Wetlands on site - federal Clean Water Act Section 404 permit likely needed for fill.
   citation: Clean Water Act Section 404, 33 U.S.C. § 1344
   delay_risk: high
@@ -32,7 +32,7 @@
 - id: R4
   layers: [fema_flood]
   buffers: [site]
-  states: [NJ, NY, DE]
+  states: ['*']
   trigger: Site in FEMA 100-year flood zone - local floodplain development permit likely.
   citation: 44 CFR § 60.3 (NFIP floodplain management)
   delay_risk: medium
@@ -48,7 +48,7 @@
 - id: R6
   layers: [critical_habitat]
   buffers: [site, 1km]
-  states: [NJ, NY, DE]
+  states: ['*']
   trigger: Critical habitat at or near site - ESA Section 7 consultation if there is a federal nexus (e.g. a 404 permit).
   citation: Endangered Species Act Section 7, 16 U.S.C. § 1536
   delay_risk: high
@@ -92,3 +92,43 @@
   trigger: Estimated water use may exceed 50,000 gallons/day - DNREC Water Allocation Permit needed if the site draws its own water.
   citation: 7 Del. C. 6010; 7 DE Admin. Code 7303
   delay_risk: medium
+
+- id: R12
+  layers: [nj_highlands]
+  buffers: [site]
+  states: [NJ]
+  trigger: Site in the Highlands Preservation Area - major development needs an NJDEP Highlands Preservation Area Approval.
+  citation: Highlands Water Protection and Planning Act, N.J.S.A. 13:20; N.J.A.C. 7:38
+  delay_risk: high
+
+- id: R13
+  layers: [nj_pinelands]
+  buffers: [site]
+  states: [NJ]
+  trigger: Site in the Pinelands Area - development is reviewed by the NJ Pinelands Commission under the Comprehensive Management Plan.
+  citation: Pinelands Protection Act, N.J.S.A. 13:18A; N.J.A.C. 7:50
+  delay_risk: high
+
+- id: R14
+  layers: [nj_cafra]
+  buffers: [site]
+  states: [NJ]
+  trigger: Site in the CAFRA coastal zone - an NJDEP CAFRA permit may be required.
+  citation: Coastal Area Facility Review Act, N.J.S.A. 13:19; N.J.A.C. 7:7
+  delay_risk: medium
+
+- id: R15
+  layers: [ny_protected]
+  buffers: [site]
+  states: [NY]
+  trigger: Protected land on site - converting public parkland in NY may require state legislative approval (parkland alienation).
+  citation: NY public trust doctrine (parkland alienation); NY Const. Art. XIV for Forest Preserve lands
+  delay_risk: high
+
+- id: R16
+  layers: [de_wetlands]
+  buffers: [site, 1km]
+  states: [DE]
+  trigger: Wetlands at or near site - a DNREC wetlands permit is needed if they are tidal wetlands.
+  citation: Delaware Wetlands Act, 7 Del. C. ch. 66; 7 DE Admin. Code 7502
+  delay_risk: high
