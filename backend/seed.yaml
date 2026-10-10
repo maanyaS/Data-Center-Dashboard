@@ -119,6 +119,16 @@ layers:
   url: https://enterprise.firstmap.delaware.gov/arcgis/rest/services/Hydrology/DE_Wetlands/FeatureServer/6
   where: 1=1
   scope: site
+- name: wildlife_areas
+  title: Wildlife refuges and habitat areas (USGS PAD-US)
+  url: https://services.arcgis.com/v01gqwM5QqNysAAi/ArcGIS/rest/services/Fee_Managers_PADUS/FeatureServer/0
+  where: Des_Tp IN ('NWR','WPA','SHCA','HCA')
+  label_field: Unit_Nm
+  states:
+  - '*'
+  scope: region
+  color: '#16a34a'
+  out_fields: Unit_Nm,Des_Tp
 - name: water_stress
   title: Baseline water stress (WRI Aqueduct 4.0)
   url: https://services.arcgis.com/P3ePLMYs2RVChkJx/arcgis/rest/services/aqueduct_water_risk/FeatureServer/1

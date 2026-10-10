@@ -24,7 +24,7 @@ STATE_FIPS = dict(zip(
     "40 41 42 44 45 46 47 48 49 50 51 53 54 55 56 72".split(),
     "AL AK AZ AR CA CO CT DE DC FL GA HI ID IL IN IA KS KY LA ME MD MA MI MN MS MO MT NE NV NH NJ NM NY NC ND OH "
     "OK OR PA RI SC SD TN TX UT VT VA WA WV WI WY PR".split()))
-NOT_SCREENED = ("counties", "egrid_subregions")   # region layers used only for lookups
+NOT_SCREENED = ("counties", "egrid_subregions", "wildlife_areas")   # region layers not turned into findings
 
 # Region overlays: every feature gets a 0-4 "level" (same 5-step color scale for both).
 RATING = {"Very Low": 0, "Relatively Low": 1, "Relatively Moderate": 2, "Relatively High": 3, "Very High": 4}
@@ -36,6 +36,8 @@ def overlay_level(layer_name, props):
         return cat if cat is not None and cat >= 0 else None   # -1 = arid / low water use
     if layer_name == "climate_risk":
         return RATING.get(props.get("RISK_RATNG"))
+    if layer_name == "wildlife_areas":
+        return 0   # single color
     return None
 
 

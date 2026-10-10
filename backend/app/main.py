@@ -76,7 +76,7 @@ def layers():
 @app.get("/overlay/{name}")
 def overlay(name: str, bbox: str = "-180,17,-64,72"):
     """bbox = minLon,minLat,maxLon,maxLat of the current map view."""
-    if name not in ("water_stress", "climate_risk"):
+    if name not in ("water_stress", "climate_risk", "wildlife_areas"):
         raise HTTPException(404, "Unknown overlay")
     return spatial.overlay_geojson(name, [float(x) for x in bbox.split(",")])
 
