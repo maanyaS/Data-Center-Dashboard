@@ -1,0 +1,69 @@
+# Rules: if a finding matches, flag a LIKELY review trigger.
+# A rule matches when a finding from one of `layers` falls in one of `buffers`
+# (site / 1km / 5km), the site is in one of `states`, and mw >= min_mw.
+# `always: true` rules only check state + min_mw (no finding needed).
+# VERIFY every citation before the demo.
+
+- id: R1
+  layers: [nwi_wetlands, nj_wetlands, ny_wetlands]
+  buffers: [site]
+  states: [NJ, NY]
+  trigger: Wetlands on site - federal Clean Water Act Section 404 permit likely needed for fill.
+  citation: Clean Water Act Section 404, 33 U.S.C. § 1344
+  delay_risk: high
+
+- id: R2
+  layers: [nj_wetlands, nwi_wetlands]
+  buffers: [site, 1km]
+  states: [NJ]
+  trigger: Wetlands at or near site - NJDEP freshwater wetlands / transition area permit may be required.
+  citation: NJ Freshwater Wetlands Protection Act, N.J.S.A. 13:9B; N.J.A.C. 7:7A
+  delay_risk: high
+
+- id: R3
+  layers: [ny_wetlands, nwi_wetlands]
+  buffers: [site, 1km]
+  states: [NY]
+  trigger: Wetlands at or near site - NYSDEC Article 24 freshwater wetlands permit may be required (100 ft adjacent area).
+  citation: NY ECL Article 24; 6 NYCRR Part 663
+  delay_risk: high
+
+- id: R4
+  layers: [fema_flood]
+  buffers: [site]
+  states: [NJ, NY]
+  trigger: Site in FEMA 100-year flood zone - local floodplain development permit likely.
+  citation: 44 CFR § 60.3 (NFIP floodplain management)
+  delay_risk: medium
+
+- id: R5
+  layers: [fema_flood]
+  buffers: [site]
+  states: [NJ]
+  trigger: Site in flood hazard area - NJDEP Flood Hazard Area permit likely.
+  citation: NJ Flood Hazard Area Control Act Rules, N.J.A.C. 7:13
+  delay_risk: high
+
+- id: R6
+  layers: [critical_habitat]
+  buffers: [site, 1km]
+  states: [NJ, NY]
+  trigger: Critical habitat at or near site - ESA Section 7 consultation if there is a federal nexus (e.g. a 404 permit).
+  citation: Endangered Species Act Section 7, 16 U.S.C. § 1536
+  delay_risk: high
+
+- id: R7
+  layers: [nj_open_space, protected_areas]
+  buffers: [site]
+  states: [NJ]
+  trigger: Protected open space on site - Green Acres diversion approval may be required.
+  citation: N.J.A.C. 7:36-26 (Green Acres diversion)
+  delay_risk: high
+
+- id: R8
+  always: true
+  states: [NY]
+  min_mw: 1
+  trigger: Discretionary local/state approvals in NY - SEQRA environmental review likely.
+  citation: NY SEQRA, ECL Article 8; 6 NYCRR Part 617
+  delay_risk: medium

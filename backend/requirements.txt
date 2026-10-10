@@ -1,0 +1,8 @@
+fastapi
+uvicorn
+shapely>=2.0
+pyproj
+requests
+pyyaml
+python-dotenv
+openpyxl

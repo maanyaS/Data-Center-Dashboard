@@ -1,0 +1,109 @@
+# Seed data loaded into the SQLite database (data/sitecheck.db) on first run.
+# Edit this file, then delete data/sitecheck.db (or run `python -m scripts.reset_db`) to reload.
+
+# GIS layers to screen against.
+#   scope: "site"   -> fetched around each screened site (6 km box), cached in the DB
+#          "region" -> fetched once for all of NJ + NY (small layers only)
+#   url: ArcGIS REST layer URL (".../MapServer/<id>" or ".../FeatureServer/<id>").
+#        Leave "" if unknown yet -> findings for that layer say "unknown".
+#   label_field: attribute shown in finding text.
+layers:
+  - name: fema_flood
+    title: FEMA flood hazard zone (100-yr)
+    url: https://hazards.fema.gov/arcgis/rest/services/public/NFHL/MapServer/28
+    where: "SFHA_TF = 'T'"
+    label_field: FLD_ZONE
+    states: [NJ, NY]
+    scope: site
+    color: "#2563eb"
+  - name: nwi_wetlands
+    title: USFWS National Wetlands Inventory
+    url: https://fwspublicservices.wim.usgs.gov/wetlandsmapservice/rest/services/Wetlands/MapServer/0
+    where: "1=1"
+    label_field: WETLAND_TYPE
+    states: [NJ, NY]
+    scope: site
+    color: "#059669"
+  - name: nj_wetlands
+    title: NJDEP freshwater wetlands (2012)
+    url: https://mapsdep.nj.gov/arcgis/rest/services/Features/Land_lu/MapServer/2
+    where: "1=1"
+    label_field: LABEL12
+    states: [NJ]
+    scope: site
+    color: "#10b981"
+  - name: nj_open_space
+    title: NJ state protected open space
+    url: https://mapsdep.nj.gov/arcgis/rest/services/Applications/DEP_NLT/MapServer/1
+    where: "1=1"
+    label_field: FEATURE_NAME
+    states: [NJ]
+    scope: site
+    color: "#65a30d"
+  - name: ny_wetlands
+    title: NYSDEC regulated freshwater wetlands
+    url: https://gisservices.dec.ny.gov/arcgis/rest/services/Wetlands/MapServer/0
+    where: "1=1"
+    label_field: CLASS
+    states: [NY]
+    scope: site
+    color: "#0d9488"
+  - name: protected_areas
+    title: USGS PAD-US protected areas
+    url: https://services.arcgis.com/v01gqwM5QqNysAAi/ArcGIS/rest/services/Fee_Managers_PADUS/FeatureServer/0  # PAD-US 4.1 fee lands only
+    where: "1=1"
+    label_field: Unit_Nm
+    states: [NJ, NY]
+    scope: site
+    color: "#84cc16"
+  - name: critical_habitat
+    title: USFWS critical habitat
+    url: https://services.arcgis.com/QVENGdaPbd4LUkLV/ArcGIS/rest/services/USFWS_Critical_Habitat/FeatureServer/0  # final; proposed = /2
+    where: "1=1"
+    label_field: comname
+    states: [NJ, NY]
+    scope: site
+    color: "#dc2626"
+  # Not screened; used to find which state/county a point is in (and county centroids for alerts).
+  - name: counties
+    title: US Census counties
+    url: https://tigerweb.geo.census.gov/arcgis/rest/services/TIGERweb/State_County/MapServer/1
+    where: "STATE IN ('34','36')"
+    label_field: NAME
+    states: [NJ, NY]
+    scope: region
+    color: "#6b7280"
+
+# Demo sites for the dropdown. Coordinates are APPROXIMATE - verify before demo.
+demo_sites:
+  - name: STAMP site, Genesee County NY (proposed data center)
+    lat: 43.0880
+    lon: -78.2280
+    mw: 500
+  - name: Greenidge Generation, Dresden NY (crypto mining)
+    lat: 42.6790
+    lon: -76.9480
+    mw: 106
+  - name: Lake Mariner, Barker NY (crypto/HPC)
+    lat: 43.3600
+    lon: -78.5950
+    mw: 500
+  - name: Vineland NJ (AI data center)
+    lat: 39.4860
+    lon: -75.0250
+    mw: 300
+
+# Demand estimate assumptions. VERIFY against LBNL 2024 US Data Center Energy Usage Report.
+estimate_params:
+  - key: load_factor
+    low: 0.5
+    high: 0.8
+    source: "Assumed average IT utilization of planned MW (team assumption)"
+  - key: pue
+    low: 1.15
+    high: 1.5
+    source: "LBNL 2024 US Data Center Energy Usage Report - PUE range (verify)"
+  - key: wue_l_per_kwh
+    low: 0.2
+    high: 1.0
+    source: "LBNL 2024 US Data Center Energy Usage Report - on-site water use per IT kWh (verify)"

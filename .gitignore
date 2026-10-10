@@ -1,0 +1,8 @@
+__pycache__/
+.venv/
+.env
+.vercel/
+backend/data/*
+!backend/data/sitecheck.db
+node_modules/
+frontend/dist/

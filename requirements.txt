@@ -1,0 +1,7 @@
+# Used by Vercel for api/index.py. Keep in sync with backend/requirements.txt.
+fastapi
+shapely>=2.0
+pyproj
+requests
+pyyaml
+python-dotenv
