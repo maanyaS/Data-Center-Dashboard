@@ -8,6 +8,7 @@ VERIFY the column names below against the real NYISO file.
 """
 import csv
 import json
+import math
 from pathlib import Path
 
 from shapely.geometry import shape
@@ -17,6 +18,7 @@ from . import db
 SHEET = "Load Projects"
 ID_COL = "Queue Number"
 NAME_COL = "Project: Project Name"
+DEV_COL = "Developer Name"
 COUNTY_COL = "County"
 STATE_COL = "State"
 MW_COL = "Peak MW load"
@@ -63,9 +65,40 @@ def county_centroid(county):
     return None
 
 
+def to_mw(row):
+    try:
+        return float(row.get(MW_COL) or 0)
+    except ValueError:
+        return 0
+
+
+def sync_projects(rows):
+    """Put every NY data center in the queue on the map (projects table), at its county center.
+    Projects in the same county are spread in a small circle so their pins don't overlap."""
+    per_county = {}
+    for row in rows:
+        if not is_data_center(row):
+            continue
+        county = str(row.get(COUNTY_COL) or "")
+        loc = county_centroid(county)
+        lat = lon = None
+        if loc:
+            n = per_county.get(county, 0)
+            per_county[county] = n + 1
+            angle, r = n * 2.4, 0.01 * math.sqrt(n)   # ~1 km steps outward
+            lat, lon = loc[0] + r * math.sin(angle), loc[1] + r * math.cos(angle)
+        db.execute(
+            "INSERT OR REPLACE INTO projects (name, source, queue_id, county, state, lat, lon, mw, approximate, status, notes) "
+            "VALUES (?, 'nyiso', ?, ?, 'NY', ?, ?, ?, 1, ?, ?)",
+            (str(row.get(NAME_COL) or ""), str(row.get(ID_COL)).strip(), county, lat, lon, to_mw(row),
+             f"NYISO status {row.get(STATUS_COL)}", f"End use: {row.get(END_USE_COL) or 'n/a'}. "
+             f"Developer: {row.get(DEV_COL) or 'n/a'}. Location is the county center (approximate)."))
+
+
 def check_queue(path, screen_fn):
-    """screen_fn(lat, lon, mw) -> screening result dict. Returns list of new alerts."""
+    """screen_fn(lat, lon, mw, name) -> screening result dict. Returns list of new alerts."""
     rows = read_queue(path)
+    sync_projects(rows)
     old = {r["queue_id"] for r in db.rows("SELECT queue_id FROM queue_snapshot")}
     first_run = not old
     new_alerts = []
@@ -76,18 +109,15 @@ def check_queue(path, screen_fn):
         db.execute("INSERT OR REPLACE INTO queue_snapshot VALUES (?,?)", (qid, json.dumps(row, default=str)))
         if first_run or not is_data_center(row):   # first run just saves the baseline
             continue
-        try:
-            mw = float(row.get(MW_COL) or 0)
-        except ValueError:
-            mw = 0
+        mw = to_mw(row)
         loc = county_centroid(row.get(COUNTY_COL, ""))
         result, summary = None, "Location unknown - county not matched."
         if loc:
-            result = screen_fn(loc[0], loc[1], mw)
+            result = screen_fn(loc[0], loc[1], mw, str(row.get(NAME_COL) or ""))
             t = result.get("triggers", [])
             high = sum(1 for x in t if x["delay_risk"] == "high")
             summary = f"Approximate location (county centroid). {len(t)} likely triggers, {high} high delay risk."
-        db.execute("DELETE FROM alerts WHERE queue_id = ?", (qid,))   # re-running the demo replaces, not duplicates
+        db.execute("DELETE FROM alerts WHERE queue_id = ?", (qid,))   # re-running replaces, not duplicates
         db.execute(
             "INSERT INTO alerts (queue_id, name, county, mw, lat, lon, summary, result) VALUES (?,?,?,?,?,?,?,?)",
             (qid, str(row.get(NAME_COL, "")), str(row.get(COUNTY_COL, "")), mw,

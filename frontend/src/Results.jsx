@@ -8,6 +8,8 @@ const RISK = {
 };
 const BUFFER = { site: "At site", "1km": "Within 1 km", "5km": "Within 5 km", none: "None within 5 km", unknown: "Unknown" };
 const num = (n) => n.toLocaleString();
+const fmtM = (m) => (m >= 1000 ? `${(m / 1000).toFixed(1)} km` : `${m} m`);
+const PROTECTED = ["protected_areas", "nj_open_space", "critical_habitat"];
 
 export default function Results({ result, selectedId, onSelect }) {
   const { site, findings, triggers, estimates, briefs } = result;
@@ -16,11 +18,14 @@ export default function Results({ result, selectedId, onSelect }) {
   return (
     <div className="mt-6 space-y-6">
       <div className="rounded-lg bg-slate-800 p-3 text-sm text-white">
+        {site.name && <div className="font-medium">{site.name}</div>}
         <div className="text-slate-300">{site.county}, {site.state} · {site.mw} MW</div>
         <div className="text-base font-semibold">
           {triggers.length} likely triggers · {high} high delay risk
         </div>
       </div>
+
+      <ProtectedLands findings={findings} onSelect={onSelect} />
 
       <Section title="Likely review triggers">
         {triggers.length === 0 && <p className="text-sm text-slate-500">None flagged from the layers checked.</p>}
@@ -116,6 +121,34 @@ function Briefs({ briefs, onSelect }) {
       {audio && <audio src={audio} controls autoPlay className="w-full" />}
       {voiceErr && <p className="text-xs text-slate-500">{voiceErr}</p>}
       <p className="text-xs text-slate-400">Written {briefs.source === "llm" ? "by AI" : "from a template"} using only the findings above; every sentence cites its source.</p>
+    </Section>
+  );
+}
+
+// Every named protected area / open space / habitat within 5 km - for land managers
+function ProtectedLands({ findings, onSelect }) {
+  const layers = findings.filter((f) => PROTECTED.includes(f.layer));
+  const lands = layers.flatMap((f) => (f.nearby || []).map((n) => ({ ...n, f })))
+    .sort((a, b) => a.distance_m - b.distance_m);
+  const unknown = layers.filter((f) => f.buffer === "unknown");
+  return (
+    <Section title={`Protected lands within 5 km (${lands.length})`}>
+      {lands.length === 0 && <p className="text-sm text-slate-500">None found in the layers checked.</p>}
+      <div className="divide-y rounded-md border text-sm">
+        {lands.map((l) => (
+          <button key={l.f.id + l.name} onClick={() => onSelect(l.f.id)}
+            className="flex w-full items-center justify-between gap-2 px-3 py-1.5 text-left hover:bg-slate-50">
+            <span className="flex items-center gap-2">
+              <span className="inline-block h-2.5 w-2.5 shrink-0 rounded-sm" style={{ background: l.f.color }} />
+              {l.name}
+            </span>
+            <span className={`shrink-0 text-xs font-medium ${l.distance_m <= 200 ? "text-red-600" : l.distance_m <= 1000 ? "text-amber-600" : "text-slate-500"}`}>
+              {l.distance_m === 0 ? "on site" : fmtM(l.distance_m)}
+            </span>
+          </button>
+        ))}
+      </div>
+      {unknown.map((f) => <p key={f.id} className="text-xs italic text-slate-500">{f.title}: unknown (not checked)</p>)}
     </Section>
   );
 }

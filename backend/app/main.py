@@ -22,34 +22,35 @@ class ScreenRequest(BaseModel):
     lat: float
     lon: float
     mw: float
+    name: str = ""
 
 
-def run_screen(lat, lon, mw):
+def run_screen(lat, lon, mw, name=""):
     state, county, findings = spatial.screen_point(lat, lon)
     if state is None:
-        raise HTTPException(400, "Site is outside New Jersey / New York coverage.")
+        raise HTTPException(400, "Site is outside New Jersey / New York / Delaware coverage.")
     triggers = rules.evaluate(findings, state, mw)
     est = estimates.estimate(mw)
     result = {
-        "site": {"lat": lat, "lon": lon, "mw": mw, "state": state, "county": county},
+        "site": {"name": name, "lat": lat, "lon": lon, "mw": mw, "state": state, "county": county},
         "findings": findings,
         "triggers": triggers,
         "estimates": est,
         "briefs": briefs.write_briefs(findings, triggers, est),
         "rings": spatial.ring_geojson(lat, lon),
     }
-    db.save_screening(lat, lon, mw, result)
+    db.save_screening(name, lat, lon, mw, result)
     return result
 
 
 @app.post("/screen")
 def screen(req: ScreenRequest):
-    return run_screen(req.lat, req.lon, req.mw)
+    return run_screen(req.lat, req.lon, req.mw, req.name)
 
 
-@app.get("/demo-sites")
-def demo_sites():
-    return db.rows("SELECT * FROM demo_sites ORDER BY id")
+@app.get("/projects")
+def projects():
+    return db.rows("SELECT * FROM projects WHERE lat IS NOT NULL ORDER BY name")
 
 
 @app.get("/layers")

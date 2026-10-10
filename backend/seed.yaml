@@ -13,7 +13,7 @@ layers:
     url: https://hazards.fema.gov/arcgis/rest/services/public/NFHL/MapServer/28
     where: "SFHA_TF = 'T'"
     label_field: FLD_ZONE
-    states: [NJ, NY]
+    states: [NJ, NY, DE]
     scope: site
     color: "#2563eb"
   - name: nwi_wetlands
@@ -21,7 +21,7 @@ layers:
     url: https://fwspublicservices.wim.usgs.gov/wetlandsmapservice/rest/services/Wetlands/MapServer/0
     where: "1=1"
     label_field: WETLAND_TYPE
-    states: [NJ, NY]
+    states: [NJ, NY, DE]
     scope: site
     color: "#059669"
   - name: nj_wetlands
@@ -53,7 +53,7 @@ layers:
     url: https://services.arcgis.com/v01gqwM5QqNysAAi/ArcGIS/rest/services/Fee_Managers_PADUS/FeatureServer/0  # PAD-US 4.1 fee lands only
     where: "1=1"
     label_field: Unit_Nm
-    states: [NJ, NY]
+    states: [NJ, NY, DE]
     scope: site
     color: "#84cc16"
   - name: critical_habitat
@@ -61,37 +61,18 @@ layers:
     url: https://services.arcgis.com/QVENGdaPbd4LUkLV/ArcGIS/rest/services/USFWS_Critical_Habitat/FeatureServer/0  # final; proposed = /2
     where: "1=1"
     label_field: comname
-    states: [NJ, NY]
+    states: [NJ, NY, DE]
     scope: site
     color: "#dc2626"
   # Not screened; used to find which state/county a point is in (and county centroids for alerts).
   - name: counties
     title: US Census counties
     url: https://tigerweb.geo.census.gov/arcgis/rest/services/TIGERweb/State_County/MapServer/1
-    where: "STATE IN ('34','36')"
+    where: "STATE IN ('34','36','10')"
     label_field: NAME
-    states: [NJ, NY]
+    states: [NJ, NY, DE]
     scope: region
     color: "#6b7280"
-
-# Demo sites for the dropdown. Coordinates are APPROXIMATE - verify before demo.
-demo_sites:
-  - name: STAMP site, Genesee County NY (proposed data center)
-    lat: 43.0880
-    lon: -78.2280
-    mw: 500
-  - name: Greenidge Generation, Dresden NY (crypto mining)
-    lat: 42.6790
-    lon: -76.9480
-    mw: 106
-  - name: Lake Mariner, Barker NY (crypto/HPC)
-    lat: 43.3600
-    lon: -78.5950
-    mw: 500
-  - name: Vineland NJ (AI data center)
-    lat: 39.4860
-    lon: -75.0250
-    mw: 300
 
 # Demand estimate assumptions. VERIFY against LBNL 2024 US Data Center Energy Usage Report.
 estimate_params:

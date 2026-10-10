@@ -2,7 +2,7 @@
 
 Run from backend/:
     python -m scripts.check_queue path/to/NYISO-Interconnection-Queue.xlsx
-Demo (pretend the last N NY data center rows are new):
+Test alerts (pretend the last N NY data center rows are new):
     python -m scripts.check_queue path/to/queue.xlsx --forget 3
 """
 import sys
@@ -20,9 +20,9 @@ if "--forget" in sys.argv:
     print(f"Forgot {len(ids)} rows from snapshot: {ids}")
 
 
-def screen(lat, lon, mw):
+def screen(lat, lon, mw, name):
     try:
-        return run_screen(lat, lon, mw)
+        return run_screen(lat, lon, mw, name)
     except Exception as e:
         return {"error": str(e), "triggers": []}
 

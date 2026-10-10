@@ -17,12 +17,21 @@ function bounds(geometry) {
   return b;
 }
 
-export default function MapView({ pin, onPick, result, selectedId, onSelect }) {
+// Existing projects -> GeoJSON points for the map
+const projectsGeojson = (projects) => ({
+  type: "FeatureCollection",
+  features: projects.map((p) => ({
+    type: "Feature", geometry: { type: "Point", coordinates: [p.lon, p.lat] },
+    properties: { id: p.id, name: p.name, source: p.source, mw: p.mw },
+  })),
+});
+
+export default function MapView({ pin, projects, onPick, onProject, result, selectedId, onSelect }) {
   const box = useRef(null);
   const map = useRef(null);
   const marker = useRef(null);
   const handlers = useRef({});
-  handlers.current = { onPick, onSelect };
+  handlers.current = { onPick, onSelect, onProject, projects };
 
   // Create the map once
   useEffect(() => {
@@ -41,8 +50,23 @@ export default function MapView({ pin, onPick, result, selectedId, onSelect }) {
       m.addLayer({ id: "findings-line", type: "line", source: "findings",
         paint: { "line-color": ["get", "color"],
           "line-width": ["case", ["get", "selected"], 3, 1] } });
+      m.addSource("projects", { type: "geojson", data: projectsGeojson(handlers.current.projects) });
+      m.addLayer({ id: "projects", type: "circle", source: "projects",
+        paint: { "circle-radius": ["interpolate", ["linear"], ["zoom"], 5, 4, 12, 8],
+          "circle-color": ["match", ["get", "source"], "nyiso", "#f97316", "#7c3aed"],
+          "circle-stroke-color": "#fff", "circle-stroke-width": 1.5 } });
+      // Hover: show project name
+      const tip = new maplibregl.Popup({ closeButton: false, offset: 10 });
+      m.on("mouseenter", "projects", (e) => {
+        m.getCanvas().style.cursor = "pointer";
+        const f = e.features[0].properties;
+        tip.setLngLat(e.lngLat).setText(`${f.name} · ${f.mw} MW`).addTo(m);
+      });
+      m.on("mouseleave", "projects", () => { m.getCanvas().style.cursor = ""; tip.remove(); });
     });
     m.on("click", (e) => {
+      const proj = m.queryRenderedFeatures(e.point, { layers: ["projects"] })[0];
+      if (proj) return handlers.current.onProject(handlers.current.projects.find((p) => p.id === proj.properties.id));
       const hit = m.queryRenderedFeatures(e.point, { layers: ["findings-fill", "findings-line"] })[0];
       if (hit) handlers.current.onSelect(hit.properties.id);
       else handlers.current.onPick(e.lngLat.lat, e.lngLat.lng);
@@ -56,6 +80,11 @@ export default function MapView({ pin, onPick, result, selectedId, onSelect }) {
     marker.current.setLngLat([pin.lon, pin.lat]).addTo(map.current);
     map.current.flyTo({ center: [pin.lon, pin.lat], zoom: Math.max(map.current.getZoom(), 12) });
   }, [pin]);
+
+  // Project pins (data arrives after the map may already be loaded)
+  useEffect(() => {
+    map.current.getSource("projects")?.setData(projectsGeojson(projects));
+  }, [projects]);
 
   // Rings + finding features
   useEffect(() => {
@@ -82,7 +111,12 @@ export default function MapView({ pin, onPick, result, selectedId, onSelect }) {
   const legend = (result?.findings || []).filter((f) => f.geometry);
   return (
     <>
-      <div ref={box} className="absolute inset-0" />
+      <div ref={box} style={{ position: "absolute", inset: 0 }} />
+      <div className="absolute top-3 left-3 rounded-md bg-white/95 px-3 py-2 text-xs shadow">
+        <div className="flex items-center gap-2"><Dot c="#7c3aed" /> Known project (NJ / NY / DE list)</div>
+        <div className="flex items-center gap-2"><Dot c="#f97316" /> NYISO queue (approx. county location)</div>
+        <div className="flex items-center gap-2"><Dot c="#059669" /> Your pin</div>
+      </div>
       {legend.length > 0 && (
         <div className="absolute bottom-4 right-4 rounded-md bg-white/95 p-3 text-xs shadow">
           {legend.map((f) => (
@@ -97,3 +131,5 @@ export default function MapView({ pin, onPick, result, selectedId, onSelect }) {
     </>
   );
 }
+
+const Dot = ({ c }) => <span className="inline-block h-2.5 w-2.5 rounded-full" style={{ background: c }} />;

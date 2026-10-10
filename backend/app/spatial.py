@@ -18,8 +18,8 @@ TO_DEG = Transformer.from_crs(5070, 4326, always_xy=True).transform
 SITE_RADIUS_M = 200          # "at site" = within 200 m of the pin (approximate footprint)
 RINGS_M = {"site": SITE_RADIUS_M, "1km": 1000, "5km": 5000}
 FETCH_RADIUS_KM = 8          # how much area to download around a site (a bit more than 5 km)
-REGION_BBOX = (-79.8, 38.9, -71.8, 45.1)   # NJ + NY
-STATE_FIPS = {"34": "NJ", "36": "NY"}
+REGION_BBOX = (-79.8, 38.4, -71.8, 45.1)   # NJ + NY + DE
+STATE_FIPS = {"34": "NJ", "36": "NY", "10": "DE"}
 
 
 # ---------- downloading ----------
@@ -61,6 +61,11 @@ def fetch_arcgis(url, where, bbox, simplify_deg=0.00002):
     return features
 
 
+def round_coords(c, nd=5):
+    """Round GeoJSON coordinates to ~1 m (5 decimals) to keep the database small."""
+    return round(c, nd) if isinstance(c, float) else [round_coords(x, nd) for x in c]
+
+
 def store_features(layer, features):
     con = db.connect()
     for i, f in enumerate(features):
@@ -71,9 +76,11 @@ def store_features(layer, features):
         src_id = str(f.get("id") or props.get("OBJECTID") or props.get("objectid") or hash(geom.wkb))
         label = str(props.get(layer["label_field"]) or "")
         minx, miny, maxx, maxy = geom.bounds
+        keep_props = props if layer["scope"] == "region" else {}   # only counties need attributes
+        gj = {"type": f["geometry"]["type"], "coordinates": round_coords(f["geometry"]["coordinates"])}
         con.execute(
             "INSERT OR IGNORE INTO features VALUES (?,?,?,?,?,?,?,?,?)",
-            (layer["name"], src_id, label, json.dumps(props), json.dumps(f["geometry"]),
+            (layer["name"], src_id, label, json.dumps(keep_props), json.dumps(gj, separators=(",", ":")),
              minx, miny, maxx, maxy),
         )
     con.commit()
@@ -186,8 +193,13 @@ def screen_point(lat, lon):
         buffer = next(name for name, m in RINGS_M.items() if d <= m)
         n1 = sum(1 for h in hits if h[0] <= 1000)
         where = "at the site" if buffer == "site" else f"{fmt_m(d)} from the site"
+        nearby = {}   # every named feature within 5 km, closest distance per name
+        for hd, hl, _ in hits:
+            if hl and hl.lower() != "unknown" and hl not in nearby:
+                nearby[hl] = round(hd)
         findings.append({
             **base, "buffer": buffer, "distance_m": round(d),
+            "nearby": [{"name": n, "distance_m": m} for n, m in list(nearby.items())[:15]],
             "geometry": mapping(g),
             "detail": (f"Nearest {layer['title']} feature{f' ({label})' if label else ''} is {where}. "
                        f"{n1} feature(s) within 1 km, {len(hits)} within 5 km."),

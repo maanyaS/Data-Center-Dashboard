@@ -7,7 +7,7 @@
 - id: R1
   layers: [nwi_wetlands, nj_wetlands, ny_wetlands]
   buffers: [site]
-  states: [NJ, NY]
+  states: [NJ, NY, DE]
   trigger: Wetlands on site - federal Clean Water Act Section 404 permit likely needed for fill.
   citation: Clean Water Act Section 404, 33 U.S.C. § 1344
   delay_risk: high
@@ -31,7 +31,7 @@
 - id: R4
   layers: [fema_flood]
   buffers: [site]
-  states: [NJ, NY]
+  states: [NJ, NY, DE]
   trigger: Site in FEMA 100-year flood zone - local floodplain development permit likely.
   citation: 44 CFR § 60.3 (NFIP floodplain management)
   delay_risk: medium
@@ -47,7 +47,7 @@
 - id: R6
   layers: [critical_habitat]
   buffers: [site, 1km]
-  states: [NJ, NY]
+  states: [NJ, NY, DE]
   trigger: Critical habitat at or near site - ESA Section 7 consultation if there is a federal nexus (e.g. a 404 permit).
   citation: Endangered Species Act Section 7, 16 U.S.C. § 1536
   delay_risk: high

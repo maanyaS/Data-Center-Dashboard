@@ -1,4 +1,5 @@
-"""SQLite database: one file, data/sitecheck.db. Created and seeded from seed.yaml on first use."""
+"""SQLite database: one file, data/sitecheck.db. Created on first use; seeded from seed.yaml + projects.csv."""
+import csv
 import json
 import os
 import shutil
@@ -10,6 +11,7 @@ import yaml
 BACKEND = Path(__file__).resolve().parent.parent
 DB_PATH = BACKEND / "data" / "sitecheck.db"
 SEED_PATH = BACKEND / "seed.yaml"
+PROJECTS_CSV = BACKEND / "projects.csv"   # hand-maintained project list (opens in Excel)
 
 # Vercel's filesystem is read-only except /tmp: copy the bundled DB there.
 # (Writes on Vercel - new screenings, newly cached areas - are temporary.)
@@ -24,8 +26,10 @@ CREATE TABLE IF NOT EXISTS layers (
     name TEXT PRIMARY KEY, title TEXT, url TEXT, where_clause TEXT, label_field TEXT,
     states TEXT, scope TEXT, color TEXT
 );
-CREATE TABLE IF NOT EXISTS demo_sites (
-    id INTEGER PRIMARY KEY, name TEXT, lat REAL, lon REAL, mw REAL
+-- Data center projects shown on the map. source: "list" (projects.csv) or "nyiso" (queue file).
+CREATE TABLE IF NOT EXISTS projects (
+    id INTEGER PRIMARY KEY, name TEXT, source TEXT, queue_id TEXT UNIQUE, county TEXT, state TEXT,
+    lat REAL, lon REAL, mw REAL, approximate INTEGER, status TEXT, notes TEXT
 );
 CREATE TABLE IF NOT EXISTS estimate_params (
     key TEXT PRIMARY KEY, low REAL, high REAL, source TEXT
@@ -42,7 +46,7 @@ CREATE TABLE IF NOT EXISTS coverage (
     layer TEXT, minx REAL, miny REAL, maxx REAL, maxy REAL
 );
 CREATE TABLE IF NOT EXISTS screenings (
-    id INTEGER PRIMARY KEY, lat REAL, lon REAL, mw REAL, result TEXT,
+    id INTEGER PRIMARY KEY, name TEXT, lat REAL, lon REAL, mw REAL, result TEXT,
     created_at TEXT DEFAULT CURRENT_TIMESTAMP
 );
 -- NYISO queue: last snapshot + alerts generated from new rows.
@@ -68,22 +72,48 @@ def init_db():
     """Create tables; load seed.yaml if the layers table is empty."""
     con = connect()
     con.executescript(SCHEMA)
-    if con.execute("SELECT COUNT(*) FROM layers").fetchone()[0] == 0:
-        seed = yaml.safe_load(SEED_PATH.read_text())
-        for l in seed["layers"]:
-            con.execute(
-                "INSERT INTO layers VALUES (?,?,?,?,?,?,?,?)",
-                (l["name"], l["title"], l["url"], l["where"], l["label_field"],
-                 ",".join(l["states"]), l["scope"], l["color"]),
-            )
-        for s in seed["demo_sites"]:
-            con.execute("INSERT INTO demo_sites (name, lat, lon, mw) VALUES (?,?,?,?)",
-                        (s["name"], s["lat"], s["lon"], s["mw"]))
+    seed = yaml.safe_load(SEED_PATH.read_text())
+    # Layers are synced from seed.yaml on every start. If a layer's URL/filter changed,
+    # drop its cached data so it is downloaded again.
+    for l in seed["layers"]:
+        old = con.execute("SELECT url, where_clause FROM layers WHERE name=?", (l["name"],)).fetchone()
+        if old and (old["url"], old["where_clause"]) != (l["url"], l["where"]):
+            con.execute("DELETE FROM features WHERE layer=?", (l["name"],))
+            con.execute("DELETE FROM coverage WHERE layer=?", (l["name"],))
+        con.execute(
+            "INSERT OR REPLACE INTO layers VALUES (?,?,?,?,?,?,?,?)",
+            (l["name"], l["title"], l["url"], l["where"], l["label_field"],
+             ",".join(l["states"]), l["scope"], l["color"]),
+        )
+    if con.execute("SELECT COUNT(*) FROM estimate_params").fetchone()[0] == 0:
         for p in seed["estimate_params"]:
             con.execute("INSERT INTO estimate_params VALUES (?,?,?,?)",
                         (p["key"], p["low"], p["high"], p["source"]))
+    con.execute("DELETE FROM projects WHERE source = 'known'")   # old format, now in projects.csv
+    if con.execute("SELECT COUNT(*) FROM projects WHERE source='list'").fetchone()[0] == 0:
+        load_project_list(con)
+    try:   # older databases: add the name column
+        con.execute("ALTER TABLE screenings ADD COLUMN name TEXT")
+    except sqlite3.OperationalError:
+        pass
     con.commit()
     con.close()
+
+
+def load_project_list(con):
+    """(Re)load projects.csv into the projects table. Rows without lat/lon are skipped
+    (run `python -m scripts.import_projects` to geocode them)."""
+    con.execute("DELETE FROM projects WHERE source = 'list'")
+    with open(PROJECTS_CSV, newline="", encoding="utf-8") as f:
+        for r in csv.DictReader(f):
+            if not r["lat"]:
+                continue
+            notes = " ".join(x for x in [r["notes"], f"Source: {r['source']}."] if x)
+            con.execute(
+                "INSERT INTO projects (name, source, county, state, lat, lon, mw, approximate, status, notes) "
+                "VALUES (?, 'list', ?, ?, ?, ?, ?, ?, ?, ?)",
+                (r["name"], r["county"], r["state"], float(r["lat"]), float(r["lon"]),
+                 float(r["mw"] or 0), int(r["approximate"] or 0), r["status"], notes))
 
 
 def rows(sql, params=()):
@@ -109,6 +139,6 @@ def get_layers(scope=None):
     return layers
 
 
-def save_screening(lat, lon, mw, result):
-    return execute("INSERT INTO screenings (lat, lon, mw, result) VALUES (?,?,?,?)",
-                   (lat, lon, mw, json.dumps(result)))
+def save_screening(name, lat, lon, mw, result):
+    return execute("INSERT INTO screenings (name, lat, lon, mw, result) VALUES (?,?,?,?,?)",
+                   (name, lat, lon, mw, json.dumps(result)))
