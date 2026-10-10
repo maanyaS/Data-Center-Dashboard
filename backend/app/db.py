@@ -31,6 +31,9 @@ CREATE TABLE IF NOT EXISTS projects (
     id INTEGER PRIMARY KEY, name TEXT, source TEXT, queue_id TEXT UNIQUE, county TEXT, state TEXT,
     lat REAL, lon REAL, mw REAL, approximate INTEGER, status TEXT, notes TEXT
 );
+CREATE TABLE IF NOT EXISTS grid (
+    state TEXT, county TEXT, egrid TEXT, egrid_name TEXT, co2_lb_per_mwh REAL, price_cents_kwh REAL
+);
 CREATE TABLE IF NOT EXISTS estimate_params (
     key TEXT PRIMARY KEY, low REAL, high REAL, source TEXT
 );
@@ -89,6 +92,10 @@ def init_db():
         for p in seed["estimate_params"]:
             con.execute("INSERT INTO estimate_params VALUES (?,?,?,?)",
                         (p["key"], p["low"], p["high"], p["source"]))
+    con.execute("DELETE FROM grid")
+    for g in seed["grid"]:
+        con.execute("INSERT INTO grid VALUES (?,?,?,?,?,?)", (g["state"], g["county"], g["egrid"],
+                    g["egrid_name"], g["co2_lb_per_mwh"], g["price_cents_kwh"]))
     con.execute("DELETE FROM projects WHERE source = 'known'")   # old format, now in projects.csv
     if con.execute("SELECT COUNT(*) FROM projects WHERE source='list'").fetchone()[0] == 0:
         load_project_list(con)

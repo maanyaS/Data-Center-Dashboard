@@ -64,6 +64,23 @@ layers:
     states: [NJ, NY, DE]
     scope: site
     color: "#dc2626"
+  # Region-wide context layers: looked up at the pin + shown as map overlays.
+  - name: water_stress
+    title: Baseline water stress (WRI Aqueduct 4.0)
+    url: https://services.arcgis.com/P3ePLMYs2RVChkJx/arcgis/rest/services/aqueduct_water_risk/FeatureServer/1
+    where: "1=1"
+    label_field: bws_label
+    states: [NJ, NY, DE]
+    scope: region
+    color: "#0284c7"
+  - name: climate_risk
+    title: FEMA National Risk Index (county)
+    url: https://services.arcgis.com/XG15cJAlne2vxtgt/arcgis/rest/services/National_Risk_Index_Counties/FeatureServer/0
+    where: "STATEABBRV IN ('NJ','NY','DE')"
+    label_field: RISK_RATNG
+    states: [NJ, NY, DE]
+    scope: region
+    color: "#9333ea"
   # Not screened; used to find which state/county a point is in (and county centroids for alerts).
   - name: counties
     title: US Census counties
@@ -88,3 +105,18 @@ estimate_params:
     low: 0.2
     high: 1.0
     source: "LBNL 2024 US Data Center Energy Usage Report - on-site water use per IT kWh (verify)"
+
+# Grid region per state/county ("*" = rest of state): carbon rate + industrial power price.
+# CO2: EPA eGRID2023 rev2 summary Table 1 (lb CO2 per MWh output). Price: EIA avgprice_annual.xlsx, 2020 industrial.
+grid:
+  - {state: NJ, county: "*", egrid: RFCE, egrid_name: "RFC East", co2_lb_per_mwh: 596.904, price_cents_kwh: 10.01}
+  - {state: DE, county: "*", egrid: RFCE, egrid_name: "RFC East", co2_lb_per_mwh: 596.904, price_cents_kwh: 6.7}
+  - {state: NY, county: "*", egrid: NYUP, egrid_name: "NPCC Upstate NY", co2_lb_per_mwh: 242.089, price_cents_kwh: 5.54}
+  - {state: NY, county: "Bronx", egrid: NYCW, egrid_name: "NPCC NYC/Westchester", co2_lb_per_mwh: 864.469, price_cents_kwh: 5.54}
+  - {state: NY, county: "Kings", egrid: NYCW, egrid_name: "NPCC NYC/Westchester", co2_lb_per_mwh: 864.469, price_cents_kwh: 5.54}
+  - {state: NY, county: "New York", egrid: NYCW, egrid_name: "NPCC NYC/Westchester", co2_lb_per_mwh: 864.469, price_cents_kwh: 5.54}
+  - {state: NY, county: "Queens", egrid: NYCW, egrid_name: "NPCC NYC/Westchester", co2_lb_per_mwh: 864.469, price_cents_kwh: 5.54}
+  - {state: NY, county: "Richmond", egrid: NYCW, egrid_name: "NPCC NYC/Westchester", co2_lb_per_mwh: 864.469, price_cents_kwh: 5.54}
+  - {state: NY, county: "Westchester", egrid: NYCW, egrid_name: "NPCC NYC/Westchester", co2_lb_per_mwh: 864.469, price_cents_kwh: 5.54}
+  - {state: NY, county: "Nassau", egrid: NYLI, egrid_name: "NPCC Long Island", co2_lb_per_mwh: 1180.672, price_cents_kwh: 5.54}
+  - {state: NY, county: "Suffolk", egrid: NYLI, egrid_name: "NPCC Long Island", co2_lb_per_mwh: 1180.672, price_cents_kwh: 5.54}

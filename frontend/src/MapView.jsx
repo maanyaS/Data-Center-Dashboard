@@ -1,8 +1,16 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import maplibregl from "maplibre-gl";
+import { getOverlay } from "./api";
 
 const STYLE = "https://basemaps.cartocdn.com/gl/positron-gl-style/style.json";
 const EMPTY = { type: "FeatureCollection", features: [] };
+
+// Map overlays (same 0-4 level scale, low -> high)
+const LEVEL_COLORS = ["#fef9c3", "#fde68a", "#fb923c", "#ef4444", "#7f1d1d"];
+const OVERLAYS = {
+  water_stress: { title: "Water stress (WRI Aqueduct 4.0)", labels: ["Low", "Low-Med", "Med-High", "High", "Extremely high"] },
+  climate_risk: { title: "Climate risk (FEMA National Risk Index)", labels: ["Very low", "Rel. low", "Rel. moderate", "Rel. high", "Very high"] },
+};
 
 // Bounds of any GeoJSON geometry -> [[minLon, minLat], [maxLon, maxLat]]
 function bounds(geometry) {
@@ -32,6 +40,7 @@ export default function MapView({ pin, projects, onPick, onProject, result, sele
   const marker = useRef(null);
   const handlers = useRef({});
   handlers.current = { onPick, onSelect, onProject, projects };
+  const [overlay, setOverlay] = useState(""); // "", "water_stress", "climate_risk"
 
   // Create the map once
   useEffect(() => {
@@ -39,6 +48,10 @@ export default function MapView({ pin, projects, onPick, onProject, result, sele
     map.current = m;
     marker.current = new maplibregl.Marker({ color: "#059669" });
     m.on("load", () => {
+      m.addSource("overlay", { type: "geojson", data: EMPTY });
+      m.addLayer({ id: "overlay", type: "fill", source: "overlay",
+        paint: { "fill-color": ["match", ["get", "level"], ...LEVEL_COLORS.flatMap((c, i) => [i, c]), "#ccc"],
+          "fill-opacity": 0.45, "fill-outline-color": "#ffffff" } });
       m.addSource("rings", { type: "geojson", data: EMPTY });
       m.addLayer({ id: "rings", type: "line", source: "rings",
         paint: { "line-color": "#334155", "line-dasharray": [2, 2], "line-width": 1.5 } });
@@ -81,6 +94,13 @@ export default function MapView({ pin, projects, onPick, onProject, result, sele
     map.current.flyTo({ center: [pin.lon, pin.lat], zoom: Math.max(map.current.getZoom(), 12) });
   }, [pin]);
 
+  // Overlay (downloaded when toggled on)
+  useEffect(() => {
+    const src = map.current.getSource("overlay");
+    if (!overlay) return src?.setData(EMPTY);
+    getOverlay(overlay).then((g) => map.current.getSource("overlay")?.setData(g)).catch(() => {});
+  }, [overlay]);
+
   // Project pins (data arrives after the map may already be loaded)
   useEffect(() => {
     map.current.getSource("projects")?.setData(projectsGeojson(projects));
@@ -116,6 +136,24 @@ export default function MapView({ pin, projects, onPick, onProject, result, sele
         <div className="flex items-center gap-2"><Dot c="#7c3aed" /> Known project (NJ / NY / DE list)</div>
         <div className="flex items-center gap-2"><Dot c="#f97316" /> NYISO queue (approx. county location)</div>
         <div className="flex items-center gap-2"><Dot c="#059669" /> Your pin</div>
+      </div>
+      <div className="absolute top-3 right-3 w-56 rounded-md bg-white/95 p-2 text-xs shadow">
+        <div className="mb-1 font-semibold text-slate-600">Map overlay</div>
+        {[["", "None"], ["water_stress", "Water stress"], ["climate_risk", "Climate risk"]].map(([k, label]) => (
+          <label key={k} className="flex cursor-pointer items-center gap-2 py-0.5">
+            <input type="radio" name="overlay" checked={overlay === k} onChange={() => setOverlay(k)} /> {label}
+          </label>
+        ))}
+        {overlay && (
+          <div className="mt-2 border-t pt-2">
+            <div className="mb-1 text-slate-500">{OVERLAYS[overlay].title}</div>
+            {OVERLAYS[overlay].labels.map((l, i) => (
+              <div key={l} className="flex items-center gap-2">
+                <span className="inline-block h-3 w-3 rounded-sm" style={{ background: LEVEL_COLORS[i] }} /> {l}
+              </div>
+            ))}
+          </div>
+        )}
       </div>
       {legend.length > 0 && (
         <div className="absolute bottom-4 right-4 rounded-md bg-white/95 p-3 text-xs shadow">

@@ -1,4 +1,6 @@
-"""SiteCheck API. Run from backend/:  uvicorn app.main:app --reload"""
+"""SiteCheck API. Run from backend/:  uvicorn app.main:app"""
+import math
+
 from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException, Response
 from fastapi.middleware.cors import CORSMiddleware
@@ -29,8 +31,8 @@ def run_screen(lat, lon, mw, name=""):
     state, county, findings = spatial.screen_point(lat, lon)
     if state is None:
         raise HTTPException(400, "Site is outside New Jersey / New York / Delaware coverage.")
-    triggers = rules.evaluate(findings, state, mw)
-    est = estimates.estimate(mw)
+    est = estimates.estimate(mw, state, county)
+    triggers = rules.evaluate(findings, state, mw, est)
     result = {
         "site": {"name": name, "lat": lat, "lon": lon, "mw": mw, "state": state, "county": county},
         "findings": findings,
@@ -50,12 +52,27 @@ def screen(req: ScreenRequest):
 
 @app.get("/projects")
 def projects():
-    return db.rows("SELECT * FROM projects WHERE lat IS NOT NULL ORDER BY name")
+    out = db.rows("SELECT * FROM projects WHERE lat IS NOT NULL ORDER BY name")
+    seen = {}   # pins on the exact same spot are fanned out (~60 m) so each one is visible
+    for p in out:
+        key = (round(p["lat"], 5), round(p["lon"], 5))
+        n = seen[key] = seen.get(key, -1) + 1
+        if n:
+            p["lat"] += 0.0006 * math.sin(n * 2.4)
+            p["lon"] += 0.0006 * math.cos(n * 2.4)
+    return out
 
 
 @app.get("/layers")
 def layers():
     return db.get_layers("site")
+
+
+@app.get("/overlay/{name}")
+def overlay(name: str):
+    if name not in ("water_stress", "climate_risk"):
+        raise HTTPException(404, "Unknown overlay")
+    return spatial.overlay_geojson(name)
 
 
 @app.get("/alerts")

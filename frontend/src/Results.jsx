@@ -65,7 +65,16 @@ export default function Results({ result, selectedId, onSelect }) {
         <div className="grid grid-cols-2 gap-2 text-sm">
           <Stat label="Electricity, MWh/year" r={estimates.power_mwh_per_year} />
           <Stat label="On-site water, gal/day" r={estimates.water_gal_per_day} />
+          {estimates.grid && <>
+            <Stat label="CO₂, tons/year" r={estimates.co2_tons_per_year} />
+            <Stat label="Electricity cost, $/year" r={estimates.power_cost_usd_per_year} />
+          </>}
         </div>
+        {estimates.grid && (
+          <p className="text-xs text-slate-500">
+            Grid: {estimates.grid.egrid_name} ({estimates.grid.co2_lb_per_mwh} lb CO₂/MWh) · {estimates.grid.price_cents_kwh}¢/kWh industrial
+          </p>
+        )}
         <details className="text-xs text-slate-500">
           <summary className="cursor-pointer">Assumptions & sources</summary>
           <ul className="mt-1 list-disc pl-4">{estimates.sources.map((s) => <li key={s}>{s}</li>)}</ul>

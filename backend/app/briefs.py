@@ -10,6 +10,7 @@ LLM: Gemini by default, via its OpenAI-compatible API (any compatible provider w
 import json
 import os
 import re
+import time
 
 import requests
 
@@ -32,7 +33,10 @@ def facts(findings, triggers, estimates):
                       "delay_risk": t["delay_risk"], "finding_ids": t["finding_ids"]} for t in triggers],
         "estimate": {"id": "EST",
                      "power": fmt_range(estimates["power_mwh_per_year"], "MWh/year"),
-                     "water": fmt_range(estimates["water_gal_per_day"], "gallons/day")},
+                     "water": fmt_range(estimates["water_gal_per_day"], "gallons/day"),
+                     **({"co2": fmt_range(estimates["co2_tons_per_year"], "tons CO2/year"),
+                         "power_cost": fmt_range(estimates["power_cost_usd_per_year"], "USD/year"),
+                         "grid_region": estimates["grid"]["egrid_name"]} if "grid" in estimates else {})},
     }
 
 
@@ -54,6 +58,10 @@ def validate(text, valid_tags):
 def template_briefs(findings, triggers, estimates):
     est = (f"Estimated demand is {fmt_range(estimates['power_mwh_per_year'], 'MWh per year')} of electricity "
            f"and {fmt_range(estimates['water_gal_per_day'], 'gallons per day')} of on-site water [EST].")
+    if "grid" in estimates:
+        est += (f" On the {estimates['grid']['egrid_name']} grid that is about "
+                f"{fmt_range(estimates['co2_tons_per_year'], 'tons of CO2 per year')} and "
+                f"{fmt_range(estimates['power_cost_usd_per_year'], 'US dollars per year')} in electricity [EST].")
     found = [f"{f['detail'].rstrip('.')} [{f['id']}]." if f["buffer"] != "unknown"
              else f"{f['title']}: unknown, not checked [{f['id']}]." for f in findings]
     trig = [f"{t['trigger'].rstrip('.')} ({t['citation']}; delay risk {t['delay_risk']}) [{t['rule_id']}]." for t in triggers]
@@ -103,9 +111,10 @@ def write_briefs(findings, triggers, estimates):
             out = call_llm(PROMPT.format(disclaimer=DISCLAIMER, feedback=feedback,
                                          facts=json.dumps(facts(findings, triggers, estimates), indent=1)))
             problems = validate(out["developer"], valid) + validate(out["community"], valid)
-        except Exception as e:
+        except Exception as e:   # e.g. 503 when Gemini is overloaded -> wait and retry
             print(f"[briefs] LLM error: {e}")
-            break
+            time.sleep(2)
+            continue
         if not problems:
             return {"developer": out["developer"], "community": out["community"], "source": "llm"}
         feedback = "Your last answer was rejected. Fix these sentences:\n" + "\n".join(problems)

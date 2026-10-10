@@ -21,6 +21,38 @@ FETCH_RADIUS_KM = 8          # how much area to download around a site (a bit mo
 REGION_BBOX = (-79.8, 38.4, -71.8, 45.1)   # NJ + NY + DE
 STATE_FIPS = {"34": "NJ", "36": "NY", "10": "DE"}
 
+# Region overlays: every feature gets a 0-4 "level" (same 5-step color scale for both).
+RATING = {"Very Low": 0, "Relatively Low": 1, "Relatively Moderate": 2, "Relatively High": 3, "Very High": 4}
+
+
+def overlay_level(layer_name, props):
+    if layer_name == "water_stress":
+        cat = props.get("bws_cat")
+        return cat if cat is not None and cat >= 0 else None   # -1 = arid / low water use
+    if layer_name == "climate_risk":
+        return RATING.get(props.get("RISK_RATNG"))
+    return None
+
+
+def overlay_detail(layer_name, props):
+    if layer_name == "water_stress":
+        return (f"Baseline water stress at the site is {props.get('bws_label') or 'unknown'} "
+                f"(WRI Aqueduct 4.0, share of available water already withdrawn).")
+    return (f"{props.get('COUNTY')} County natural-hazard risk is {props.get('RISK_RATNG') or 'unknown'} "
+            f"(FEMA National Risk Index); social vulnerability {props.get('SOVI_RATNG') or 'unknown'}, "
+            f"community resilience {props.get('RESL_RATNG') or 'unknown'}.")
+
+
+def overlay_geojson(layer_name):
+    """All cached features of a region layer, with a 0-4 level, for the map overlay."""
+    feats = []
+    for r in db.rows("SELECT label, props, geojson FROM features WHERE layer=?", (layer_name,)):
+        level = overlay_level(layer_name, json.loads(r["props"]))
+        if level is not None:
+            feats.append({"type": "Feature", "geometry": json.loads(r["geojson"]),
+                          "properties": {"level": level, "label": r["label"]}})
+    return {"type": "FeatureCollection", "features": feats}
+
 
 # ---------- downloading ----------
 
@@ -63,7 +95,7 @@ def fetch_arcgis(url, where, bbox, simplify_deg=0.00002):
 
 def round_coords(c, nd=5):
     """Round GeoJSON coordinates to ~1 m (5 decimals) to keep the database small."""
-    return round(c, nd) if isinstance(c, float) else [round_coords(x, nd) for x in c]
+    return round(c, nd) if isinstance(c, (int, float)) else [round_coords(x, nd) for x in c]
 
 
 def store_features(layer, features):
@@ -204,4 +236,19 @@ def screen_point(lat, lon):
             "detail": (f"Nearest {layer['title']} feature{f' ({label})' if label else ''} is {where}. "
                        f"{n1} feature(s) within 1 km, {len(hits)} within 5 km."),
         })
+    # Context at the pin from region layers (water stress, climate risk)
+    pt = Point(lon, lat)
+    for layer in db.get_layers("region"):
+        if layer["name"] == "counties":
+            continue
+        base = {"id": f"F{len(findings) + 1}", "layer": layer["name"], "title": layer["title"],
+                "color": layer["color"], "source": layer["url"], "geometry": None, "distance_m": None}
+        hit = next((f for f in features_near(layer["name"], lat, lon, 1)
+                    if shape(json.loads(f["geojson"])).contains(pt)), None)
+        if hit:
+            props = json.loads(hit["props"])
+            findings.append({**base, "buffer": "site", "level": overlay_level(layer["name"], props),
+                             "detail": overlay_detail(layer["name"], props)})
+        else:
+            findings.append({**base, "buffer": "unknown", "detail": f"Unknown - no {layer['title']} data at this point."})
     return state, county, findings

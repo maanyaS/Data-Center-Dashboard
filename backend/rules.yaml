@@ -2,6 +2,7 @@
 # A rule matches when a finding from one of `layers` falls in one of `buffers`
 # (site / 1km / 5km), the site is in one of `states`, and mw >= min_mw.
 # `always: true` rules only check state + min_mw (no finding needed).
+# `min_water_gpd`: applies if the high end of the water estimate is at least this (gallons/day).
 # VERIFY every citation before the demo.
 
 - id: R1
@@ -66,4 +67,28 @@
   min_mw: 1
   trigger: Discretionary local/state approvals in NY - SEQRA environmental review likely.
   citation: NY SEQRA, ECL Article 8; 6 NYCRR Part 617
+  delay_risk: medium
+
+- id: R9
+  always: true
+  min_water_gpd: 100000
+  states: [NJ]
+  trigger: Estimated water use may exceed 100,000 gallons/day - NJDEP Water Allocation Permit needed if the site draws its own ground or surface water.
+  citation: NJ Water Supply Management Act, N.J.S.A. 58:1A; N.J.A.C. 7:19
+  delay_risk: medium
+
+- id: R10
+  always: true
+  min_water_gpd: 100000
+  states: [NY]
+  trigger: Estimated water use may exceed 100,000 gallons/day - NYSDEC Water Withdrawal Permit needed if the site draws its own water.
+  citation: NY ECL 15-1501; 6 NYCRR Part 601
+  delay_risk: medium
+
+- id: R11
+  always: true
+  min_water_gpd: 50000
+  states: [DE]
+  trigger: Estimated water use may exceed 50,000 gallons/day - DNREC Water Allocation Permit needed if the site draws its own water.
+  citation: 7 Del. C. 6010; 7 DE Admin. Code 7303
   delay_risk: medium

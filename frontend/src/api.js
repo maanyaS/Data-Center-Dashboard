@@ -13,6 +13,7 @@ const post = (path, body) =>
 
 export const screenSite = (lat, lon, mw, name) => post("/screen", { lat, lon, mw, name }).then((r) => r.json());
 export const getProjects = () => call("/projects").then((r) => r.json());
+export const getOverlay = (name) => call(`/overlay/${name}`).then((r) => r.json());
 export const getAlerts = () => call("/alerts").then((r) => r.json());
 export const speak = (text) => post("/voice", { text }).then((r) => r.blob());
 
