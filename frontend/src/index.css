@@ -6,6 +6,7 @@
    "emerald" = primary (Royal Seal / Melonade), "sky" = secondary (Rhapsody in Blue).
    Text colors are picked for WCAG AA contrast (4.5:1 or more) on their backgrounds. */
 @theme {
+  --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
   --color-white: #F9FAFA;
   --color-slate-50: #EAEFF2;
   --color-slate-100: #DEE7ED;

@@ -101,8 +101,8 @@ export default function MapView({ pin, projects, onPick, onProject, result, sele
       const el = document.createElement("div");
       el.textContent = String(i + 1);
       el.title = `#${i + 1} ${c.label} - score ${c.score}`;
-      el.style.cssText = "width:22px;height:22px;border-radius:50%;background:#0284c7;color:#fff;font:600 12px sans-serif;" +
-        "display:flex;align-items:center;justify-content:center;border:2px solid #fff;box-shadow:0 1px 3px rgba(0,0,0,.4)";
+      el.style.cssText = "width:22px;height:22px;border-radius:50%;background:#002244;color:#FFAB6E;font:600 12px sans-serif;" +
+        "display:flex;align-items:center;justify-content:center;border:2px solid #F9FAFA;box-shadow:0 1px 3px rgba(0,0,0,.4)";
       altMarkers.current.push(new maplibregl.Marker({ element: el }).setLngLat([c.lon, c.lat]).addTo(map.current));
     });
   }, [alts]);
@@ -266,6 +266,12 @@ export default function MapView({ pin, projects, onPick, onProject, result, sele
     m.getSource("rings") ? draw() : m.once("load", draw);
   }, [result, selectedId]);
 
+  // After a screening, frame the whole search area (outermost ring)
+  useEffect(() => {
+    const ring = result?.rings?.features?.at(-1);
+    if (ring) map.current.fitBounds(bounds(ring.geometry), { padding: 40, maxZoom: 15 });
+  }, [result?.screening_id, result?.rings]);
+
   // Zoom to the selected finding
   useEffect(() => {
     const f = result?.findings.find((x) => x.id === selectedId);
@@ -273,13 +279,15 @@ export default function MapView({ pin, projects, onPick, onProject, result, sele
   }, [selectedId]);
 
   const legend = (result?.findings || []).filter((f) => f.geometry);
+  const wide = typeof window === "undefined" || window.innerWidth >= 768;
   return (
     <>
       <div ref={box} style={{ position: "absolute", inset: 0 }} role="region"
         aria-label="Map. Click to place a pin, or use the search box. Arrow keys pan, plus and minus zoom."
         onDragOver={(e) => e.preventDefault()} onDrop={onDrop} />
-      <div className="absolute top-3 left-3 rounded-md bg-white/95 px-3 py-2 text-xs shadow">
-        <div className="flex items-center gap-2"><Dot c="#7c3aed" /> Known project (FracTracker / NJ list)</div>
+      <details open={wide} className="absolute top-3 left-3 rounded-xl bg-white/95 px-3 py-2 text-xs shadow">
+        <summary className="cursor-pointer font-semibold text-slate-600">Legend</summary>
+        <div className="mt-1 flex items-center gap-2"><Dot c="#7c3aed" /> Known project (FracTracker / NJ list)</div>
         <div className="flex items-center gap-2"><Dot c="#f97316" /> NYISO queue (approx. county location)</div>
         <div className="flex items-center gap-2"><span className="text-emerald-600" aria-hidden="true">🖈</span> Your pin (drag to move)</div>
         <div draggable onDragStart={(e) => e.dataTransfer.setData("text/plain", "pin")}
@@ -287,9 +295,9 @@ export default function MapView({ pin, projects, onPick, onProject, result, sele
           className="mt-2 cursor-grab rounded-md border border-emerald-300 bg-emerald-50 px-2 py-1 text-center font-medium text-emerald-700 active:cursor-grabbing">
           🖈 Drag a pin onto the map
         </div>
-      </div>
-      <div className="absolute top-3 right-3 w-56 rounded-md bg-white/95 p-2 text-xs shadow">
-        <div className="mb-1 font-semibold text-slate-600">Map overlay</div>
+      </details>
+      <details open={wide} className="absolute top-3 right-3 w-56 rounded-xl bg-white/95 p-2 text-xs shadow">
+        <summary className="mb-1 cursor-pointer font-semibold text-slate-600">Map layers</summary>
         {[["", "None"], ["water_stress", "Water stress"], ["climate_risk", "Climate risk"]].map(([k, label]) => (
           <label key={k} className="flex cursor-pointer items-center gap-2 py-0.5">
             <input type="radio" name="overlay" checked={overlay === k} onChange={() => setOverlay(k)} /> {label}
@@ -327,9 +335,9 @@ export default function MapView({ pin, projects, onPick, onProject, result, sele
             {OVERLAYS[overlay].note && <div className="mt-1 text-slate-400">{OVERLAYS[overlay].note}</div>}
           </div>
         )}
-      </div>
+      </details>
       {legend.length > 0 && (
-        <div className="absolute bottom-4 right-4 rounded-md bg-white/95 p-3 text-xs shadow">
+        <div className="absolute right-4 bottom-4 hidden rounded-xl bg-white/95 p-3 text-xs shadow md:block">
           {legend.map((f) => (
             <div key={f.id} className="flex items-center gap-2">
               <span className="inline-block h-3 w-3 rounded-sm" style={{ background: f.color }} />

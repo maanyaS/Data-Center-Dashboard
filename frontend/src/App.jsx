@@ -8,6 +8,15 @@ import Alternatives from "./Alternatives";
 import ErrorBoundary from "./ErrorBoundary";
 import Fps from "./Fps";
 
+// One-click demo sites (already-screened areas answer in a few seconds)
+const EXAMPLES = [
+  { label: "Wetlands & parkland", where: "Princeton, NJ", lat: 40.3573, lon: -74.6672, mw: 200 },
+  { label: "Suburban industrial edge", where: "Chicago area, IL", lat: 41.88, lon: -87.95, mw: 300 },
+];
+// Shown one after another while a screening runs
+const STEPS = ["Finding the county and state…", "Checking wetlands…", "Checking flood zones…", "Checking protected land and habitat…",
+  "Measuring distance to power lines…", "Applying permit rules…", "Estimating water, power and CO₂…"];
+
 export default function App() {
   const [tab, setTab] = useState("screen"); // "screen" | "alerts"
   const [projects, setProjects] = useState([]);
@@ -65,13 +74,14 @@ export default function App() {
     if (project) setName("");
   });
 
-  async function runScreen() {
+  // at/atMw/atName let the example buttons screen right away (state updates aren't visible yet)
+  async function runScreen(at = pin, atMw = mw, atName = name) {
     setLoading(true);
     setError("");
     setSelectedId(null);
     setAlts(null);
     try {
-      const r = await screenSite(pin.lat, pin.lon, Number(mw), name, withPopulation, radius);
+      const r = await screenSite(at.lat, at.lon, Number(atMw), atName, withPopulation, radius);
       setResult(r);
       loadBriefs(r);   // results show now; the AI briefs fill in when ready
     } catch (e) {
@@ -90,6 +100,26 @@ export default function App() {
       .catch(() => setResult((cur) => (same(cur) ? { ...cur, briefs: { error: true } } : cur)));
   }
 
+  // Example buttons: place the pin and screen in one click
+  function tryExample(ex) {
+    if (ex.project) {
+      openProject(ex.project);
+      return runScreen({ lat: ex.project.lat, lon: ex.project.lon }, ex.project.mw || 100, ex.project.name);
+    }
+    dropPin(ex);
+    setMw(ex.mw);
+    runScreen(ex, ex.mw, "");
+  }
+  const nyExample = projects.find((p) => p.source === "nyiso" && /^Planned/.test(p.status || ""));
+
+  // Rotating progress text while screening
+  const [step, setStep] = useState(0);
+  useEffect(() => {
+    if (!loading) return setStep(0);
+    const t = setInterval(() => setStep((i) => Math.min(i + 1, STEPS.length - 1)), 1800);
+    return () => clearInterval(t);
+  }, [loading]);
+
   function openAlert(a) {
     openProject({ name: a.name, lat: a.lat, lon: a.lon, mw: a.mw, county: a.county, state: "NY",
       source: "nyiso", approximate: 1, notes: a.summary });
@@ -103,12 +133,12 @@ export default function App() {
       <a href="#panel" className="sr-only rounded-md bg-emerald-600 px-3 py-2 text-white focus:not-sr-only focus:absolute focus:top-2 focus:left-2 focus:z-50">
         Skip to the screening panel
       </a>
-      <header className="flex items-center justify-between border-b bg-white px-5 py-3">
+      <header className="flex flex-wrap items-center justify-between gap-2 border-b bg-white px-5 py-3">
         <h1 className="text-lg font-bold">
           Before the <span className="text-emerald-600">Build</span>
-          <span className="ml-3 text-sm font-normal text-slate-500">What's on this land before a data center is built?</span>
+          <span className="ml-3 hidden text-sm font-normal text-slate-500 lg:inline">What's on this land before a data center is built?</span>
         </h1>
-        <nav className="flex gap-1" aria-label="Main">
+        <nav className="flex flex-wrap gap-1" aria-label="Main">
           {["screen", "alerts"].map((t) => (
             <button key={t} onClick={() => setTab(t)} aria-pressed={tab === t}
               className={`rounded-md px-3 py-1.5 text-sm ${tab === t ? "bg-slate-800 text-white" : "hover:bg-slate-100"}`}>
@@ -128,8 +158,8 @@ export default function App() {
         </nav>
       </header>
 
-      <main className="flex min-h-0 flex-1">
-        <aside id="panel" tabIndex={-1} aria-label="Screening panel" className={`${mapOnly ? "hidden" : ""} w-[440px] shrink-0 overflow-y-auto border-r bg-white p-5`}>
+      <main className="flex min-h-0 flex-1 flex-col md:flex-row">
+        <aside id="panel" tabIndex={-1} aria-label="Screening panel" className={`${mapOnly ? "hidden" : ""} order-2 max-h-[55vh] w-full shrink-0 overflow-y-auto border-t bg-white p-5 md:order-1 md:max-h-none md:w-[440px] md:border-t-0 md:border-r`}>
           {tab === "alerts" ? (
             <ErrorBoundary><Alerts onOpen={openAlert} /></ErrorBoundary>
           ) : (
@@ -138,11 +168,29 @@ export default function App() {
                 <Search projects={projects} onProject={openProject} onPlace={dropPin} />
 
                 {!pin && (
-                  <p className="rounded-md bg-slate-50 p-3 text-sm text-slate-600">
-                    Click a <b className="text-violet-600">project pin</b> to screen a known data center, or click
-                    anywhere in the US to test a <b className="text-emerald-600">proposed</b> one.
-                  </p>
+                  <div className="rounded-xl border bg-slate-50 p-4 shadow-sm">
+                    <h2 className="text-base font-semibold">See what's on the land before a data center is built.</h2>
+                    <p className="mt-1 text-sm text-slate-600">
+                      Wetlands, flood zones, protected land, nearby homes, likely permits, and the water and power it would use,
+                      with a plain-language brief for neighbors and developers.
+                    </p>
+                    <div className="mt-3 text-xs font-semibold uppercase tracking-wide text-slate-500">Try an example</div>
+                    <div className="mt-1 grid gap-2">
+                      {[...EXAMPLES, ...(nyExample ? [{ label: "NY grid queue project", where: nyExample.county ? `${nyExample.county} County, NY` : "New York", project: nyExample }] : [])]
+                        .map((ex) => (
+                          <button key={ex.label} onClick={() => tryExample(ex)} disabled={loading}
+                            className="rounded-lg border bg-white px-3 py-2 text-left text-sm shadow-sm hover:border-emerald-300 hover:bg-emerald-50 disabled:opacity-50">
+                            <span className="font-medium">{ex.label}</span>
+                            <span className="ml-2 text-xs text-slate-500">{ex.where}</span>
+                          </button>
+                        ))}
+                    </div>
+                    <p className="mt-3 text-xs text-slate-500">
+                      Or click a <b className="text-violet-600">project pin</b> on the map, search an address, or click anywhere in the US.
+                    </p>
+                  </div>
                 )}
+                {loading && !pin && <p role="status" className="text-sm text-slate-600">{STEPS[step]}</p>}
 
                 {pin && (project ? <ProjectCard p={project} /> : (
                   <div className="rounded-md border border-emerald-200 bg-emerald-50 p-3 text-sm">
@@ -176,9 +224,9 @@ export default function App() {
                       <input type="checkbox" checked={withPopulation} onChange={(e) => setWithPopulation(e.target.checked)} />
                       Include population nearby (2020 Census, slower)
                     </label>
-                    <button onClick={runScreen} disabled={loading} aria-busy={loading}
+                    <button onClick={() => runScreen()} disabled={loading} aria-busy={loading}
                       className="w-full rounded-md bg-emerald-600 py-2 font-medium text-white hover:bg-emerald-700 disabled:opacity-40">
-                      {loading ? "Screening… (a new area can take ~30s)" : "Screen site"}
+                      {loading ? STEPS[step] : "Screen site"}
                     </button>
                   </>
                 )}
@@ -197,7 +245,7 @@ export default function App() {
             </>
           )}
         </aside>
-        <section className="relative flex-1" aria-label="Map">
+        <section className="relative order-1 min-h-[45vh] flex-1 md:order-2" aria-label="Map">
           <ErrorBoundary>
             <MapView pin={pin} projects={projects} onPick={(lat, lon) => dropPin({ lat, lon })} onProject={openProject}
               result={result} selectedId={selectedId} onSelect={setSelectedId} alts={alts} theme={theme} />

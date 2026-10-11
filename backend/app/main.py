@@ -8,6 +8,7 @@ import os
 import threading
 import time
 from collections import defaultdict, deque
+from typing import Literal
 
 from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException, Request, Response
@@ -172,14 +173,15 @@ def get_alerts():
 
 
 class VoiceRequest(BaseModel):
-    text: str = Field(max_length=5000)
+    text: str = Field(max_length=1500)   # one brief section; keeps free-plan credits safe
+    voice: Literal["community", "developer"] = "community"
 
 
 @app.post("/voice")
 def speak(req: VoiceRequest, request: Request):
     rate_limit(request, "voice")
     try:
-        audio = voice.tts(req.text)
+        audio = voice.tts(req.text, req.voice)
     except Exception as e:   # quota used up, voice not allowed on the plan, ElevenLabs down...
         print(f"[voice] ElevenLabs error: {e}")
         raise HTTPException(502, "The voice service is unavailable right now - try again later.")

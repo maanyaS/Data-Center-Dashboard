@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { speak } from "./api";
 
 const RISK = {
@@ -8,34 +8,56 @@ const RISK = {
 };
 const BUFFER = { site: "At site", "1km": "Within 1 km", "5km": "Within 5 km", none: "None within 5 km", unknown: "Unknown" };
 const num = (n) => n.toLocaleString();
+const compact = (n) => new Intl.NumberFormat("en", { notation: "compact", maximumFractionDigits: 1 }).format(n);
 // "None within 5 km", or with a wider search: "10–25 km away" / "None within 50 km"
 const bufferLabel = (f) => f.far ? `${f.far.min_km}–${f.far.max_km} km away`
   : f.none_within_km ? `None within ${f.none_within_km} km` : BUFFER[f.buffer];
 const fmtM = (m) => (m >= 1000 ? `${(m / 1000).toFixed(1)} km` : `${m} m`);
 const PROTECTED = ["protected_areas", "nj_open_space", "critical_habitat"];
 
+// Small line icons per kind of finding (drawn in the finding's map color)
+const ICONS = {
+  water: "M12 3s-6 7-6 11a6 6 0 0 0 12 0c0-4-6-11-6-11z",
+  flood: "M2 10c2.5 0 2.5-2 5-2s2.5 2 5 2 2.5-2 5-2 2.5 2 5 2M2 16c2.5 0 2.5-2 5-2s2.5 2 5 2 2.5-2 5-2 2.5 2 5 2",
+  power: "M13 2 4 14h7l-1 8 9-12h-7z",
+  people: "M12 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8zM5 21a7 7 0 0 1 14 0",
+  hazard: "M12 3l9 16H3zM12 10v4M12 17h.01",
+  land: "M5 19C5 11 11 5 19 5c0 8-6 14-14 14zM5 19l7-7",
+};
+const kind = (layer) => /flood|cafra/.test(layer) ? "flood" : /wetland|water/.test(layer) ? "water"
+  : /transmission|substation/.test(layer) ? "power" : /census|population/.test(layer) ? "people"
+  : /climate/.test(layer) ? "hazard" : "land";
+export const Icon = ({ layer, color }) => (
+  <svg viewBox="0 0 24 24" className="h-4 w-4 shrink-0" fill="none" stroke={color || "currentColor"}
+    strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+    <path d={ICONS[kind(layer)]} />
+  </svg>
+);
+
 export default function Results({ result, selectedId, onSelect }) {
-  const { site, findings, triggers, estimates, briefs } = result;
-  const high = triggers.filter((t) => t.delay_risk === "high").length;
+  const { findings, triggers, estimates, briefs } = result;
 
   return (
     <div className="mt-6 space-y-6">
-      <div className="rounded-lg bg-slate-800 p-3 text-sm text-white">
-        {site.name && <div className="font-medium">{site.name}</div>}
-        <div className="text-slate-300">{site.county}, {site.state} · {site.mw} MW</div>
-        <div className="text-base font-semibold">
-          {triggers.length} likely triggers · {high} high delay risk
-        </div>
-      </div>
+      <Summary result={result} />
 
-      <GridAndPeople findings={findings} onSelect={onSelect} />
-
-      <ProtectedLands findings={findings} onSelect={onSelect} />
+      {/* The conclusion first; the evidence below */}
+      {!briefs ? (
+        <Section title="Brief">
+          <p role="status" className="animate-pulse text-sm text-slate-500">Writing the brief…</p>
+        </Section>
+      ) : briefs.error ? (
+        <Section title="Brief">
+          <p className="text-sm text-slate-500">The brief could not be written right now. Re-run the screening to try again.</p>
+        </Section>
+      ) : (
+        <Briefs briefs={briefs} onSelect={onSelect} />
+      )}
 
       <Section title="Likely review triggers">
         {triggers.length === 0 && <p className="text-sm text-slate-500">None flagged from the layers checked.</p>}
         {triggers.map((t) => (
-          <div key={t.rule_id} className="rounded-md border p-3 text-sm">
+          <div key={t.rule_id} className="rounded-xl border bg-white p-3 text-sm shadow-sm">
             <div className="flex items-start justify-between gap-2">
               <p>{t.trigger}</p>
               <Badge risk={t.delay_risk} />
@@ -50,27 +72,9 @@ export default function Results({ result, selectedId, onSelect }) {
         ))}
       </Section>
 
-      <Section title="Findings">
-        {findings.map((f) => (
-          <button key={f.id} onClick={() => onSelect(f.id)} aria-pressed={f.id === selectedId}
-            className={`w-full rounded-md border p-3 text-left text-sm ${f.id === selectedId ? "ring-2 ring-emerald-500" : ""} ${f.buffer === "unknown" ? "border-dashed bg-slate-50 text-slate-500 italic" : ""}`}>
-            <div className="flex items-center justify-between gap-2">
-              <span className="flex items-center gap-2 font-medium not-italic">
-                <span className="inline-block h-3 w-3 rounded-sm" style={{ background: f.color }} />
-                <span className="font-mono text-xs text-slate-500">{f.id}</span> {f.title}
-              </span>
-              <span className="text-xs whitespace-nowrap">{f.population ? "Estimate" : bufferLabel(f)}</span>
-            </div>
-            {f.population && (
-              <div className="mt-2 grid grid-cols-2 gap-2">
-                <div><div className="text-lg font-semibold">{num(f.population.within_1km)}</div><div className="text-xs text-slate-500">people within 1 km</div></div>
-                <div><div className="text-lg font-semibold">{num(f.population.within_5km)}</div><div className="text-xs text-slate-500">people within 5 km</div></div>
-              </div>
-            )}
-            <p className="mt-1">{f.detail}</p>
-          </button>
-        ))}
-      </Section>
+      <GridAndPeople findings={findings} onSelect={onSelect} />
+
+      <ProtectedLands findings={findings} onSelect={onSelect} />
 
       <Section title="Estimated demand (ranges)">
         <div className="grid grid-cols-2 gap-2 text-sm">
@@ -92,17 +96,69 @@ export default function Results({ result, selectedId, onSelect }) {
         </details>
       </Section>
 
-      {!briefs ? (
-        <Section title="Brief">
-          <p role="status" className="animate-pulse text-sm text-slate-500">Writing the brief…</p>
-        </Section>
-      ) : briefs.error ? (
-        <Section title="Brief">
-          <p className="text-sm text-slate-500">The brief could not be written right now. Re-run the screening to try again.</p>
-        </Section>
-      ) : (
-        <Briefs briefs={briefs} onSelect={onSelect} />
-      )}
+      {/* Full evidence, collapsed (opens automatically when a finding is picked on the map) */}
+      <details open={!!selectedId} className="group">
+        <summary className="cursor-pointer text-xs font-semibold uppercase tracking-wide text-slate-500">
+          All findings ({findings.length})
+        </summary>
+        <div className="mt-2 space-y-2">
+          {findings.map((f) => (
+            <button key={f.id} onClick={() => onSelect(f.id)} aria-pressed={f.id === selectedId}
+              className={`w-full rounded-xl border bg-white p-3 text-left text-sm shadow-sm ${f.id === selectedId ? "ring-2 ring-emerald-500" : ""} ${f.buffer === "unknown" ? "border-dashed bg-slate-50 text-slate-500 italic" : ""}`}>
+              <div className="flex items-center justify-between gap-2">
+                <span className="flex items-center gap-2 font-medium not-italic">
+                  <Icon layer={f.layer} color={f.color} />
+                  <span className="font-mono text-xs text-slate-500">{f.id}</span> {f.title}
+                </span>
+                <span className="text-xs whitespace-nowrap">{f.population ? "Estimate" : bufferLabel(f)}</span>
+              </div>
+              {f.population && (
+                <div className="mt-2 grid grid-cols-2 gap-2">
+                  <div><div className="text-lg font-semibold">{num(f.population.within_1km)}</div><div className="text-xs text-slate-500">people within 1 km</div></div>
+                  <div><div className="text-lg font-semibold">{num(f.population.within_5km)}</div><div className="text-xs text-slate-500">people within 5 km</div></div>
+                </div>
+              )}
+              <p className="mt-1">{f.detail}</p>
+            </button>
+          ))}
+        </div>
+      </details>
+    </div>
+  );
+}
+
+// At-a-glance card: overall review risk + three headline numbers
+function Summary({ result }) {
+  const { site, triggers, estimates, findings } = result;
+  const high = triggers.filter((t) => t.delay_risk === "high").length;
+  const medium = triggers.filter((t) => t.delay_risk === "medium").length;
+  const level = high ? ["High review risk", RISK.high] : medium ? ["Moderate review risk", RISK.medium] : ["Low review risk", RISK.low];
+  const pop = findings.find((f) => f.layer === "census_tracts")?.population;
+  const range = (r, unit) => `${compact(r.low)}–${compact(r.high)}${unit}`;
+  return (
+    <section aria-label="Screening summary" className="space-y-2">
+      <div className="rounded-xl bg-slate-800 p-4 text-white shadow-sm">
+        {site.name && <div className="font-medium">{site.name}</div>}
+        <div className="text-sm opacity-80">{site.county}, {site.state} · {site.mw} MW</div>
+        <div className="mt-2 flex flex-wrap items-center gap-2">
+          <span className={`rounded-full px-3 py-1 text-sm font-semibold ${level[1]}`}>{level[0]}</span>
+          <span className="text-sm">{triggers.length} likely reviews · {high} high delay</span>
+        </div>
+      </div>
+      <div className="grid grid-cols-3 gap-2 text-sm">
+        <Tile icon="water" label="Water / day" value={range(estimates.water_gal_per_day, " gal")} />
+        <Tile icon="hazard" label="CO₂ / year" value={estimates.co2_tons_per_year ? range(estimates.co2_tons_per_year, " t") : "unknown"} />
+        <Tile icon="people" label="People ≤1 km" value={pop ? num(pop.within_1km) : "not checked"} />
+      </div>
+    </section>
+  );
+}
+
+function Tile({ icon, label, value }) {
+  return (
+    <div className="rounded-xl border bg-white p-2.5 shadow-sm">
+      <div className="flex items-center gap-1 text-xs text-slate-500"><Icon layer={icon} /> {label}</div>
+      <div className="mt-0.5 font-semibold tabular-nums">{value}</div>
     </div>
   );
 }
@@ -112,11 +168,19 @@ const BRIEF_PARTS = [
   ["community", "Community: how to respond", "border-amber-200 bg-amber-50"],
   ["developer", "Developers: risks & next steps", "border-sky-200 bg-sky-50"],
 ];
+// Two voices: community brief = Sarah, developer brief = George (both free-plan voices)
+const LISTEN = [
+  ["community", "Community brief", "Sarah", "bg-emerald-600 hover:bg-emerald-700"],
+  ["developer", "Developer brief", "George", "bg-sky-600 hover:bg-sky-700"],
+];
 // Older saved briefs were paragraphs: show them as one bullet
 const asList = (v) => (Array.isArray(v) ? v : v ? [v] : []);
+const section = (briefs, k, title) => `${title}.\n${asList(briefs[k]).join("\n")}`;
 
 function Briefs({ briefs, onSelect }) {
-  const [audio, setAudio] = useState(null);
+  const clips = useRef({});            // who -> audio URL, so replaying never calls ElevenLabs again
+  const [playing, setPlaying] = useState(null); // {who, url}
+  const [busy, setBusy] = useState(null);
   const [voiceErr, setVoiceErr] = useState("");
   const text = BRIEF_PARTS.filter(([k]) => briefs[k])
     .map(([k, title]) => `${title}\n${asList(briefs[k]).map((b) => `- ${b}`).join("\n")}`).join("\n\n");
@@ -124,13 +188,22 @@ function Briefs({ briefs, onSelect }) {
   function download() {
     const a = document.createElement("a");
     a.href = URL.createObjectURL(new Blob([text], { type: "text/plain" }));
-    a.download = "sitecheck-brief.txt";
+    a.download = "before-the-build-brief.txt";
     a.click();
   }
 
-  async function listen() {
+  // Audio is only made when someone clicks (saves free-plan credits): key facts + that audience's section
+  async function listen(who) {
     setVoiceErr("");
-    try { setAudio(URL.createObjectURL(await speak(text.replace(/\s*\[[A-Z]+\d*\]/g, "")))); } catch (e) { setVoiceErr(e.message); }
+    if (clips.current[who]) return setPlaying({ who, url: clips.current[who] });
+    setBusy(who);
+    try {
+      const spoken = `${section(briefs, "facts", "Key facts")}\n${section(briefs, who, who === "community" ? "What you can do" : "For developers")}`
+        .replace(/\s*\[[A-Z]+\d*\]/g, "").slice(0, 1500);
+      clips.current[who] = URL.createObjectURL(await speak(spoken, who));
+      setPlaying({ who, url: clips.current[who] });
+    } catch (e) { setVoiceErr(e.message); }
+    setBusy(null);
   }
 
   // [F1] tags are clickable (highlight the finding); other tags are small and grey
@@ -140,8 +213,32 @@ function Briefs({ briefs, onSelect }) {
 
   return (
     <Section title="Brief">
+      {/* Listen: ElevenLabs voices, one per audience */}
+      <div className="rounded-xl border bg-white p-3 shadow-sm">
+        <div className="mb-2 text-xs font-semibold text-slate-600">Listen to the brief</div>
+        <div className="grid grid-cols-2 gap-2">
+          {LISTEN.map(([who, label, voice, style]) => (
+            <button key={who} onClick={() => listen(who)} disabled={!!busy} aria-busy={busy === who}
+              className={`rounded-lg px-3 py-2 text-left text-sm font-medium text-white disabled:opacity-60 ${style}`}>
+              <span aria-hidden="true">▷</span> {busy === who ? "Preparing audio…" : label}
+              <span className="block text-xs font-normal opacity-80">Voice: {voice}</span>
+            </button>
+          ))}
+        </div>
+        {playing && (
+          <div className="mt-2">
+            <div className="text-xs text-slate-500" role="status">
+              Now playing: {playing.who === "community" ? "community" : "developer"} brief
+            </div>
+            <audio key={playing.url} src={playing.url} controls autoPlay className="mt-1 w-full" />
+          </div>
+        )}
+        {voiceErr && <p role="alert" className="mt-2 text-xs text-red-700">{voiceErr}</p>}
+        <p className="mt-2 text-xs text-slate-500">Voices by ElevenLabs. Audio is made only when you press play.</p>
+      </div>
+
       {BRIEF_PARTS.filter(([k]) => briefs[k]).map(([k, title, style]) => (
-        <div key={k} className={`rounded-md border p-3 ${style}`}>
+        <div key={k} className={`rounded-xl border p-3 shadow-sm ${style}`}>
           <div className="mb-1 text-xs font-semibold text-slate-600">{title}</div>
           <ul className="list-disc space-y-1 pl-4 text-sm">
             {asList(briefs[k]).map((b, i) => <li key={i}>{cite(b)}</li>)}
@@ -151,12 +248,9 @@ function Briefs({ briefs, onSelect }) {
       <div className="flex gap-2 text-sm">
         <button onClick={() => navigator.clipboard.writeText(text)} className="rounded-md border px-3 py-1">Copy</button>
         <button onClick={download} className="rounded-md border px-3 py-1">Download</button>
-        <button onClick={listen} className="rounded-md border px-3 py-1" aria-label="Listen to the brief"><span aria-hidden="true">▷</span> Listen</button>
       </div>
-      {audio && <audio src={audio} controls autoPlay className="w-full" />}
-      {voiceErr && <p className="text-xs text-slate-500">{voiceErr}</p>}
       <p className="text-xs text-slate-400">
-        Written {briefs.source === "llm" ? "by AI" : "from a template"} using only the findings above; every bullet cites its source.
+        Written {briefs.source === "llm" ? "by AI" : "from a template"} using only the findings below; every bullet cites its source.
         Screening-level only, not a site survey; does not predict permit outcomes.
       </p>
     </Section>
@@ -206,7 +300,7 @@ function Badge({ risk }) {
 
 function Stat({ label, r }) {
   return (
-    <div className="rounded-md border p-2">
+    <div className="rounded-xl border bg-white p-2 shadow-sm">
       <div className="text-xs text-slate-500">{label}</div>
       <div className="font-semibold">{num(r.low)} – {num(r.high)}</div>
     </div>
@@ -220,7 +314,7 @@ function GridAndPeople({ findings, onSelect }) {
   if (!sub && !line && !pop) return null;
   const dist = (f) => (!f || f.buffer === "unknown" ? "unknown" : f.distance_m == null ? "none within 5 km" : fmtM(f.distance_m));
   const Item = ({ f, label, value }) => (
-    <button onClick={() => f && onSelect(f.id)} className="rounded-md border p-2 text-left hover:bg-slate-50">
+    <button onClick={() => f && onSelect(f.id)} className="rounded-xl border bg-white p-2 text-left shadow-sm hover:bg-slate-50">
       <div className="text-xs text-slate-500">{label}{f && <span className="ml-1 font-mono">[{f.id}]</span>}</div>
       <div className="font-semibold">{value}</div>
     </button>

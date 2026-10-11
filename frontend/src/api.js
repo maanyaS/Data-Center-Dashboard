@@ -20,7 +20,7 @@ export const getProjects = () => call("/projects").then((r) => r.json());
 export const getOverlay = (name) => call(`/overlay/${name}`).then((r) => r.json());
 export const getTracts = (bbox, signal) => call(`/overlay/population/tracts?bbox=${bbox}`, { signal }).then((r) => r.json());
 export const getAlerts = () => call("/alerts").then((r) => r.json());
-export const speak = (text) => post("/voice", { text }).then((r) => r.blob());
+export const speak = (text, voice = "community") => post("/voice", { text, voice }).then((r) => r.blob());
 
 const GEOAPIFY_KEY = import.meta.env.VITE_GEOAPIFY_KEY;
 
