@@ -178,7 +178,11 @@ class VoiceRequest(BaseModel):
 @app.post("/voice")
 def speak(req: VoiceRequest, request: Request):
     rate_limit(request, "voice")
-    audio = voice.tts(req.text)
+    try:
+        audio = voice.tts(req.text)
+    except Exception as e:   # quota used up, voice not allowed on the plan, ElevenLabs down...
+        print(f"[voice] ElevenLabs error: {e}")
+        raise HTTPException(502, "The voice service is unavailable right now - try again later.")
     if audio is None:
         raise HTTPException(404, "ElevenLabs not configured (set ELEVENLABS_API_KEY).")
     return Response(audio, media_type="audio/mpeg")

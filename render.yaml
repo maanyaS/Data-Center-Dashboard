@@ -21,7 +21,7 @@ services:
       - key: ELEVENLABS_API_KEY
         sync: false
       - key: ELEVENLABS_VOICE_ID
-        value: 21m00Tcm4TlvDq8ikWAM
+        value: EXAVITQu4vr4xnSDxMaL
       # Your GitHub Pages address, e.g. https://maanyas.github.io (no trailing slash)
       - key: ALLOWED_ORIGINS
         sync: false
