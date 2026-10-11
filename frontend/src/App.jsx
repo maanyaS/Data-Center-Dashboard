@@ -7,12 +7,16 @@ import Search from "./Search";
 import Alternatives from "./Alternatives";
 import ErrorBoundary from "./ErrorBoundary";
 import Fps from "./Fps";
+import Term from "./Term";
 
 // One-click demo sites (already-screened areas answer in a few seconds)
 const EXAMPLES = [
   { label: "Wetlands & parkland", where: "Princeton, NJ", lat: 40.3573, lon: -74.6672, mw: 200 },
   { label: "Suburban industrial edge", where: "Chicago area, IL", lat: 41.88, lon: -87.95, mw: 300 },
 ];
+// Side panel width limits (px); the map always keeps at least MAP_MIN
+const PANEL_DEFAULT = 440, PANEL_MIN = 280, MAP_MIN = 320;
+const clampPanel = (w) => Math.round(Math.max(PANEL_MIN, Math.min(w, window.innerWidth - MAP_MIN)));
 // Shown one after another while a screening runs
 const STEPS = ["Finding the county and state…", "Checking wetlands…", "Checking flood zones…", "Checking protected land and habitat…",
   "Measuring distance to power lines…", "Applying permit rules…", "Estimating water, power and CO₂…"];
@@ -32,6 +36,12 @@ export default function App() {
   const [error, setError] = useState("");
   const [alts, setAlts] = useState(null); // nearby lower-risk candidates shown on the map
   const [mapOnly, setMapOnly] = useState(false); // hide the side panel
+  // Side panel width (drag the divider; remembered in this browser)
+  const [panelW, setPanelW] = useState(() => {
+    try { const w = Number(localStorage.getItem("panelWidth")); if (w) return clampPanel(w); } catch {}
+    return PANEL_DEFAULT;
+  });
+  useEffect(() => { try { localStorage.setItem("panelWidth", String(panelW)); } catch {} }, [panelW]);
   // Light / dark theme: remembered in this browser, else follows the system setting
   const [theme, setTheme] = useState(() => {
     try { const t = localStorage.getItem("theme"); if (t === "light" || t === "dark") return t; } catch {}
@@ -159,7 +169,8 @@ export default function App() {
       </header>
 
       <main className="flex min-h-0 flex-1 flex-col md:flex-row">
-        <aside id="panel" tabIndex={-1} aria-label="Screening panel" className={`${mapOnly ? "hidden" : ""} order-2 max-h-[55vh] w-full shrink-0 overflow-y-auto border-t bg-white p-5 md:order-1 md:max-h-none md:w-[440px] md:border-t-0 md:border-r`}>
+        <aside id="panel" tabIndex={-1} aria-label="Screening panel" style={{ "--panel-w": `${panelW}px` }}
+          className={`${mapOnly ? "hidden" : ""} order-2 max-h-[55vh] w-full shrink-0 overflow-y-auto border-t bg-white p-5 md:order-1 md:max-h-none md:w-[var(--panel-w)] md:max-w-[calc(100vw-320px)] md:border-t-0`}>
           {tab === "alerts" ? (
             <ErrorBoundary><Alerts onOpen={openAlert} /></ErrorBoundary>
           ) : (
@@ -207,7 +218,7 @@ export default function App() {
                     <label className="flex items-center gap-2 text-sm">
                       Planned capacity
                       <input type="number" min="1" value={mw} onChange={(e) => setMw(e.target.value)}
-                        className="w-24 rounded-md border px-2 py-1" /> MW
+                        className="w-24 rounded-md border px-2 py-1" /> <Term k="MW">MW</Term>
                     </label>
                     <label className="block text-sm">
                       <span className="flex justify-between">
@@ -245,7 +256,8 @@ export default function App() {
             </>
           )}
         </aside>
-        <section className="relative order-1 min-h-[45vh] flex-1 md:order-2" aria-label="Map">
+        {!mapOnly && <PanelResizer width={panelW} onResize={setPanelW} />}
+        <section className="relative order-1 min-h-[45vh] min-w-0 flex-1 md:order-3" aria-label="Map">
           <ErrorBoundary>
             <MapView pin={pin} projects={projects} onPick={(lat, lon) => dropPin({ lat, lon })} onProject={openProject}
               result={result} selectedId={selectedId} onSelect={setSelectedId} alts={alts} theme={theme} />
@@ -257,6 +269,46 @@ export default function App() {
         <span>Screening-level only, from public GIS data. Not a site survey. Does not predict permit outcomes.</span>
         <span aria-hidden="true"><Fps /></span>
       </footer>
+    </div>
+  );
+}
+
+// Divider between the side panel and the map: drag to resize, arrow keys to nudge, double-click to reset.
+// Side-by-side layout only (md and up); on narrow screens the panel sits under the map.
+function PanelResizer({ width, onResize }) {
+  function startDrag(e) {
+    e.preventDefault();
+    const handle = e.currentTarget;
+    const left = handle.previousElementSibling.getBoundingClientRect().left;
+    handle.setPointerCapture(e.pointerId);
+    document.body.style.userSelect = "none";
+    const move = (ev) => onResize(clampPanel(ev.clientX - left));
+    const stop = () => {
+      handle.removeEventListener("pointermove", move);
+      handle.removeEventListener("pointerup", stop);
+      handle.removeEventListener("pointercancel", stop);
+      document.body.style.userSelect = "";
+    };
+    handle.addEventListener("pointermove", move);
+    handle.addEventListener("pointerup", stop);
+    handle.addEventListener("pointercancel", stop);
+  }
+  function onKey(e) {
+    const step = e.shiftKey ? 80 : 20;
+    if (e.key === "ArrowLeft") onResize(clampPanel(width - step));
+    else if (e.key === "ArrowRight") onResize(clampPanel(width + step));
+    else if (e.key === "Home") onResize(clampPanel(PANEL_MIN));
+    else return;
+    e.preventDefault();
+  }
+  return (
+    <div role="separator" aria-orientation="vertical" aria-label="Resize side panel"
+      aria-valuenow={width} aria-valuemin={PANEL_MIN} tabIndex={0}
+      title="Drag to resize the panel (double-click to reset)"
+      onPointerDown={startDrag} onKeyDown={onKey} onDoubleClick={() => onResize(clampPanel(PANEL_DEFAULT))}
+      className="group relative z-10 hidden w-1.5 shrink-0 cursor-col-resize touch-none border-r bg-white hover:bg-emerald-200 focus-visible:bg-emerald-200 md:order-2 md:block">
+      {/* grip dots */}
+      <span aria-hidden="true" className="absolute top-1/2 left-1/2 h-8 w-0.5 -translate-x-1/2 -translate-y-1/2 rounded bg-slate-300 group-hover:bg-emerald-600" />
     </div>
   );
 }

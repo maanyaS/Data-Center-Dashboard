@@ -96,6 +96,10 @@ body { background: var(--color-slate-50); color: var(--color-slate-800); }
 /* Tailwind 4 defaults borders to the text color; use a light gray instead */
 @layer base {
   *, ::before, ::after { border-color: var(--color-slate-200); }
+  /* Pointing hand on everything clickable (Tailwind 4 resets buttons to the arrow) */
+  button:not(:disabled), [role="button"], a[href], summary, select, label:has(input:not(:disabled)),
+  input[type="checkbox"], input[type="radio"], input[type="range"] { cursor: pointer; }
+  button:disabled, input:disabled { cursor: not-allowed; }
 }
 
 /* ---------- Accessibility ---------- */
