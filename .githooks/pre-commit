@@ -1,0 +1,20 @@
+#!/bin/sh
+# Blocks commits that contain secrets (.env files, API keys, tokens).
+# Turn on once per clone:  git config core.hooksPath .githooks
+
+# 1) No .env files (only .env.example templates)
+if git diff --cached --name-only | grep -E '(^|/)(\.env(\..+)?|.+\.env)$' | grep -v '\.env\.example$'; then
+  echo "BLOCKED: the file(s) above look like .env files with secrets. Unstage them: git restore --staged <file>"
+  exit 1
+fi
+
+# 2) No key-looking values in added lines
+PATTERN='(eyJhbGciOi[A-Za-z0-9_-]{10,}|AQ\.[A-Za-z0-9_-]{20,}|AIza[0-9A-Za-z_-]{30,}|sk-[A-Za-z0-9]{20,}|(TURSO_AUTH_TOKEN|LLM_API_KEY|ELEVENLABS_API_KEY|VITE_GEOAPIFY_KEY)=[^[:space:]]+)'
+if git diff --cached -U0 | grep -E '^\+' | grep -v '^+++' | grep -qE "$PATTERN"; then
+  echo "BLOCKED: this commit seems to contain an API key or token."
+  echo "Keep secrets in backend/.env (git-ignored), Render settings, or GitHub secrets - never in code."
+  echo "Files involved:"
+  git diff --cached --name-only -G "$PATTERN"
+  exit 1
+fi
+exit 0
