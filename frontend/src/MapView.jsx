@@ -1,5 +1,9 @@
 import { useEffect, useRef, useState } from "react";
 import * as maplibregl from "maplibre-gl";
+// MapLibre 6 draws tiles in a background worker. Vite bundles it (with its imports) and we hand MapLibre the URL;
+// otherwise the worker file is missing from the build and the map stays blank.
+import workerUrl from "maplibre-gl/dist/maplibre-gl-worker.mjs?worker&url";
+maplibregl.setWorkerUrl(workerUrl);
 import { getOverlay, getTracts } from "./api";
 
 // Basemap per theme: Geoapify if VITE_GEOAPIFY_KEY is set (frontend/.env), else free CARTO Positron / Dark Matter

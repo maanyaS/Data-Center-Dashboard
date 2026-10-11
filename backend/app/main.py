@@ -80,6 +80,7 @@ def run_screen(lat, lon, mw, name="", population=False, radius_km=5):
     egrid = (spatial.region_props("egrid_subregions", lat, lon) or {}).get("Subregion")
     est = estimates.estimate(mw, state, egrid)
     triggers = rules.evaluate(findings, state, mw, est)
+    est["carbon"] = estimates.carbon_impact(est, findings)   # score 0-10 + offset options
     result = {
         "site": {"name": name, "lat": lat, "lon": lon, "mw": mw, "state": state, "county": county,
                  "radius_km": radius_km},

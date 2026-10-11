@@ -1,6 +1,9 @@
 // All backend calls in one place.
+// Local dev: /api is proxied to localhost:8000. GitHub Pages: VITE_API_URL is the Render address.
+const API = (import.meta.env.VITE_API_URL || "/api").replace(/\/$/, "");
+
 async function call(path, options) {
-  const res = await fetch(`/api${path}`, options);
+  const res = await fetch(`${API}${path}`, options);
   if (!res.ok) {
     const body = await res.json().catch(() => ({}));
     throw new Error(body.detail || `Request failed (${res.status})`);

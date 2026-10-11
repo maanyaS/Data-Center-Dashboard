@@ -64,7 +64,9 @@ def facts(findings, triggers, estimates, alts=None):
                      "water": fmt_range(estimates["water_gal_per_day"], "gallons/day"),
                      **({"co2": fmt_range(estimates["co2_tons_per_year"], "tons CO2/year"),
                          "power_cost": fmt_range(estimates["power_cost_usd_per_year"], "USD/year"),
-                         "grid_region": estimates["grid"]["egrid_name"]} if "grid" in estimates else {})},
+                         "grid_region": estimates["grid"]["egrid_name"]} if "grid" in estimates else {}),
+                     **({"carbon_score": f"{estimates['carbon']['score']}/10 ({estimates['carbon']['level']})",
+                         "cars_equivalent": estimates["carbon"]["cars"]} if estimates.get("carbon") else {})},
     }
 
 

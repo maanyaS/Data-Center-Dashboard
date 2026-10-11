@@ -5,6 +5,7 @@ See what's on the land before a data center is built. Drop a pin anywhere in the
 - **Findings:** wetlands, flood zones, protected land, critical habitat, power lines and substations, with distances
 - **Likely permit triggers:** each with a citation and delay-risk level
 - **Estimates:** power, water, CO₂ and electricity cost as ranges
+- **Carbon impact score (0–10):** how heavy the site's footprint is (emissions size + local grid), with real-world scale and ways to offset or restore it
 - **Lower-risk spots nearby:** same rules, side-by-side comparison
 - **A plain-language brief:** key facts, what residents can do, what developers should check. Every bullet cites its source.
 - **Audio:** listen to either brief (ElevenLabs)

@@ -41,6 +41,8 @@ export default function Results({ result, selectedId, onSelect }) {
     <div className="mt-6 space-y-6">
       <Summary result={result} />
 
+      {estimates.carbon && <CarbonCard c={estimates.carbon} />}
+
       {/* The conclusion first; the evidence below */}
       {!briefs ? (
         <Section title="Brief">
@@ -150,6 +152,51 @@ function Summary({ result }) {
         <Tile icon="hazard" label="CO₂ / year" value={estimates.co2_tons_per_year ? range(estimates.co2_tons_per_year, " t") : "unknown"} />
         <Tile icon="people" label="People ≤1 km" value={pop ? num(pop.within_1km) : "not checked"} />
       </div>
+    </section>
+  );
+}
+
+// Carbon impact score (0-10) for the developer, with real-world scale and ways to offset or restore
+function CarbonCard({ c }) {
+  const color = c.score >= 8 ? "bg-red-600" : c.score >= 6 ? "bg-red-500" : c.score >= 3 ? "bg-amber-600" : "bg-emerald-600";
+  const pct = c.global_share_pct < 0.001 ? "under 0.001%" : `${c.global_share_pct.toFixed(4)}%`;
+  return (
+    <section aria-label="Carbon impact" className="rounded-xl border bg-white p-3 text-sm shadow-sm">
+      <div className="flex items-baseline justify-between gap-2">
+        <h2 className="text-xs font-semibold uppercase tracking-wide text-slate-500">Carbon impact</h2>
+        <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${c.score >= 6 ? RISK.high : c.score >= 3 ? RISK.medium : RISK.low}`}>{c.level}</span>
+      </div>
+      <div className="mt-1 flex items-end gap-2">
+        <span className="text-3xl font-bold tabular-nums">{c.score}</span>
+        <span className="pb-1 text-slate-500">/ 10</span>
+      </div>
+      <div role="meter" aria-valuemin={0} aria-valuemax={10} aria-valuenow={c.score} aria-label={`Carbon impact score ${c.score} out of 10`}
+        className="mt-1 h-2 rounded-full bg-slate-100">
+        <div className={`h-2 rounded-full ${color}`} style={{ width: `${c.score * 10}%` }} />
+      </div>
+      <p className="mt-1 text-xs text-slate-500">
+        {c.size_points}/6 for size of emissions + {c.grid_points}/4 for how carbon-heavy the local grid is.
+      </p>
+      <ul className="mt-2 space-y-0.5">
+        <li>≈ <b>{num(c.tons_per_year)}</b> t CO₂ a year, like <b>{num(c.cars)}</b> cars on the road</li>
+        <li>{pct} of global energy CO₂</li>
+        <li className="text-xs text-slate-500">
+          {c.over_reporting_threshold ? "Above" : "Below"} the EPA's 25,000 t/yr reporting threshold for comparison
+          (that rule covers direct emissions; grid power counts as indirect, Scope 2).
+        </li>
+      </ul>
+      <details className="mt-2">
+        <summary className="cursor-pointer font-medium text-emerald-700">Ways to offset or restore ({c.offsets.length})</summary>
+        <ul className="mt-1 space-y-1.5">
+          {c.offsets.map((o) => (
+            <li key={o.action} className="rounded-lg bg-slate-50 p-2">
+              <div className="font-medium">{o.action}</div>
+              <div className="text-xs text-slate-600">{o.amount}</div>
+            </li>
+          ))}
+        </ul>
+        <p className="mt-1 text-xs text-slate-500">Rough estimates. Sources: {c.source}.</p>
+      </details>
     </section>
   );
 }
