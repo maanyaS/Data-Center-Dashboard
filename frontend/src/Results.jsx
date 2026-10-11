@@ -123,7 +123,7 @@ function Briefs({ briefs, onSelect }) {
   }
 
   // Make [F1] tags clickable
-  const parts = text.split(/(\[(?:F\d+|R\d+|EST)\])/);
+  const parts = text.split(/(\[(?:F\d+|R\d+|EST|ALT\d+|ACT\d+)\])/);
 
   return (
     <Section title="Briefs">

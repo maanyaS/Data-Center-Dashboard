@@ -6,6 +6,7 @@ Queue rows give a county, not an address -> results are "approximate location".
 
 VERIFY the column names below against the real NYISO file.
 """
+import re
 import csv
 import json
 import math
@@ -91,7 +92,7 @@ def sync_projects(rows):
             "INSERT OR REPLACE INTO projects (name, source, queue_id, county, state, lat, lon, mw, approximate, status, notes) "
             "VALUES (?, 'nyiso', ?, ?, 'NY', ?, ?, ?, 1, ?, ?)",
             (str(row.get(NAME_COL) or ""), str(row.get(ID_COL)).strip(), county, lat, lon, to_mw(row),
-             f"NYISO status {row.get(STATUS_COL)}", f"End use: {row.get(END_USE_COL) or 'n/a'}. "
+             status_label(f"NYISO status {row.get(STATUS_COL)}"), f"End use: {row.get(END_USE_COL) or 'n/a'}. "
              f"Developer: {row.get(DEV_COL) or 'n/a'}. Location is the county center (approximate)."))
 
 
@@ -131,3 +132,24 @@ def list_alerts():
     for a in out:
         a["result"] = json.loads(a["result"]) if a["result"] else None
     return out
+
+
+# NYISO interconnection queue status codes -> plain words
+NYISO_STATUS = {0: "Withdrawn", 1: "Scoping meeting pending", 2: "Feasibility study pending",
+                3: "Feasibility study in progress", 4: "System impact study pending",
+                5: "System impact study in progress", 6: "System impact study approved",
+                7: "Facilities study pending", 8: "Cost allocation rejected / next study",
+                9: "Facilities study in progress", 10: "Cost allocation accepted, agreement in progress",
+                11: "Interconnection agreement done", 12: "Under construction",
+                13: "In service (testing)", 14: "In service"}
+
+
+def status_label(status):
+    """'NYISO status 5' -> 'Planned - System impact study in progress (NYISO step 5 of 14)'."""
+    m = re.fullmatch(r"NYISO status (\d+)", str(status or ""))
+    if not m:
+        return status
+    n = int(m.group(1))
+    stage = "Withdrawn" if n == 0 else "Under construction" if n == 12 else "Operating" if n >= 13 else "Planned"
+    step = NYISO_STATUS.get(n, "unknown step")
+    return f"{stage}{'' if step == stage else ' - ' + step} (NYISO step {n} of 14)"

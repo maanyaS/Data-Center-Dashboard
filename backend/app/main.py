@@ -97,7 +97,13 @@ def write_briefs(screening_id: int, request: Request):
     if result is None:
         raise HTTPException(404, "Screening not found")
     if not result.get("briefs"):
-        result["briefs"] = briefs.write_briefs(result["findings"], result["triggers"], result["estimates"])
+        site = result["site"]
+        try:   # nearby lower-risk spots (uses the area already cached by /screen, so no new downloads)
+            alts = alternatives.find_alternatives(site["lat"], site["lon"], site["mw"])
+        except Exception as e:
+            print(f"[briefs] alternatives failed: {e}")
+            alts = None
+        result["briefs"] = briefs.write_briefs(result["findings"], result["triggers"], result["estimates"], alts)
         db.update_screening(screening_id, result)
     return result["briefs"]
 
@@ -111,6 +117,8 @@ def screen(req: ScreenRequest, request: Request):
 @app.get("/projects")
 def projects():
     out = db.rows("SELECT * FROM projects WHERE lat IS NOT NULL ORDER BY name")
+    for p in out:
+        p["status"] = alerts.status_label(p["status"])
     # Same site in two sources: FracTracker (exact location, MW, pushback info) wins over projects.csv
     ft = [p for p in out if p["source"] == "fractracker"]
     out = [p for p in out if p["source"] != "list" or not any(
