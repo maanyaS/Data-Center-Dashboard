@@ -132,9 +132,9 @@ layers:
 - name: census_tracts
   title: Population (2020 Census tracts)
   url: https://tigerweb.geo.census.gov/arcgis/rest/services/TIGERweb/Tracts_Blocks/MapServer/10
-  where: 1=1
+  where: POP100 IS NOT NULL   # changed from 1=1 so old caches (saved without POP100) re-download once
   label_field: NAME
-  out_fields: NAME,POP100,HU100
+  out_fields: NAME,POP100,HU100,AREALAND
   states:
   - '*'
   scope: site

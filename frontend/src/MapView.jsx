@@ -14,7 +14,11 @@ const LEVEL_COLORS = ["#fef9c3", "#fde68a", "#fb923c", "#ef4444", "#7f1d1d"];
 const OVERLAYS = {
   water_stress: { title: "Water stress (WRI Aqueduct 4.0)", labels: ["Low", "Low-Med", "Med-High", "High", "Extremely high"] },
   climate_risk: { title: "Climate risk (FEMA National Risk Index)", labels: ["Very low", "Rel. low", "Rel. moderate", "Rel. high", "Very high"] },
+  population: { title: "People per km² (2020 Census tracts)", labels: ["Under 100", "100–500", "500–1,500", "1,500–4,000", "4,000+"],
+    note: "Zoom in to see tracts · first load of an area takes a few seconds" },
 };
+// Small, numerous layers only load when zoomed in
+const MIN_ZOOM = { wildlife_areas: 6, population: 11 };
 
 // Bounds of any GeoJSON geometry -> [[minLon, minLat], [maxLon, maxLat]]
 function bounds(geometry) {
@@ -30,14 +34,16 @@ function bounds(geometry) {
 }
 
 // Load a region layer into a map source, only for the current view.
-// Wildlife areas are small and numerous, so they only load when zoomed in (zoom >= 6).
+// Only the newest request per source is drawn (a slow older response can't overwrite it).
+const latest = {};
 function loadOverlay(m, name, sourceId = "overlay") {
   const src = m.getSource(sourceId);
   if (!src) return;
-  if (!name || (sourceId === "wildlife" && m.getZoom() < 6)) return src.setData(EMPTY);
+  const req = (latest[sourceId] = (latest[sourceId] || 0) + 1);
+  if (!name || m.getZoom() < (MIN_ZOOM[name] || 0)) return src.setData(EMPTY);
   const b = m.getBounds();
   getOverlay(name, [b.getWest(), b.getSouth(), b.getEast(), b.getNorth()].map((x) => x.toFixed(3)).join(","))
-    .then((g) => src.setData(g)).catch(() => {});
+    .then((g) => req === latest[sourceId] && src.setData(g)).catch(() => {});
 }
 
 // Existing projects -> GeoJSON points for the map
@@ -132,6 +138,13 @@ export default function MapView({ pin, projects, onPick, onProject, result, sele
         tip.setLngLat(e.lngLat).setText(e.features[0].properties.label || "Wildlife area").addTo(m);
       });
       m.on("mouseleave", "wildlife", () => tip.remove());
+      // Population tracts: show people + density on hover
+      m.on("mousemove", "overlay", (e) => {
+        if (handlers.current.overlay !== "population") return;
+        if (m.queryRenderedFeatures(e.point, { layers: ["projects"] }).length) return;
+        tip.setLngLat(e.lngLat).setText(e.features[0].properties.label).addTo(m);
+      });
+      m.on("mouseleave", "overlay", () => tip.remove());
     });
     m.on("moveend", () => {
       loadOverlay(m, handlers.current.overlay);
@@ -210,7 +223,7 @@ export default function MapView({ pin, projects, onPick, onProject, result, sele
       </div>
       <div className="absolute top-3 right-3 w-56 rounded-md bg-white/95 p-2 text-xs shadow">
         <div className="mb-1 font-semibold text-slate-600">Map overlay</div>
-        {[["", "None"], ["water_stress", "Water stress"], ["climate_risk", "Climate risk"]].map(([k, label]) => (
+        {[["", "None"], ["water_stress", "Water stress"], ["climate_risk", "Climate risk"], ["population", "Population density"]].map(([k, label]) => (
           <label key={k} className="flex cursor-pointer items-center gap-2 py-0.5">
             <input type="radio" name="overlay" checked={overlay === k} onChange={() => setOverlay(k)} /> {label}
           </label>
@@ -229,6 +242,7 @@ export default function MapView({ pin, projects, onPick, onProject, result, sele
                 <span className="inline-block h-3 w-3 rounded-sm" style={{ background: LEVEL_COLORS[i] }} /> {l}
               </div>
             ))}
+            {OVERLAYS[overlay].note && <div className="mt-1 text-slate-400">{OVERLAYS[overlay].note}</div>}
           </div>
         )}
       </div>

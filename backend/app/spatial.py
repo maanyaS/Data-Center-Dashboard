@@ -4,6 +4,7 @@ Distances are computed in EPSG:5070 (Conus Albers, meters), which covers all of 
 """
 import json
 import math
+from concurrent.futures import ThreadPoolExecutor
 
 import requests
 from pyproj import Transformer
@@ -38,7 +39,17 @@ def overlay_level(layer_name, props):
         return RATING.get(props.get("RISK_RATNG"))
     if layer_name == "wildlife_areas":
         return 0   # single color
+    if layer_name == POPULATION_LAYER:
+        d = density_per_km2(props)
+        return None if d is None else sum(d >= b for b in DENSITY_BINS)
     return None
+
+
+def overlay_label(layer_name, props, label):
+    """Hover text for an overlay feature."""
+    if layer_name == POPULATION_LAYER:
+        return f"{label}: {int(props['POP100']):,} people · {round(density_per_km2(props)):,} per km²"
+    return label
 
 
 def overlay_detail(layer_name, props):
@@ -59,10 +70,11 @@ def overlay_geojson(layer_name, bbox):
     minx, miny, maxx, maxy = bbox
     for r in db.rows("SELECT label, props, geojson FROM features WHERE layer=? "
                      "AND maxx>=? AND minx<=? AND maxy>=? AND miny<=?", (layer_name, minx, maxx, miny, maxy)):
-        level = overlay_level(layer_name, json.loads(r["props"]))
+        props = json.loads(r["props"])
+        level = overlay_level(layer_name, props)
         if level is not None:
             feats.append({"type": "Feature", "geometry": json.loads(r["geojson"]),
-                          "properties": {"level": level, "label": r["label"]}})
+                          "properties": {"level": level, "label": overlay_label(layer_name, props, r["label"])}})
     return {"type": "FeatureCollection", "features": feats}
 
 
@@ -125,7 +137,8 @@ def store_features(layer, features):
         src_id = str(f.get("id") or props.get("OBJECTID") or props.get("objectid") or hash(geom.wkb))
         label = str(props.get(layer["label_field"]) or "")
         minx, miny, maxx, maxy = geom.bounds
-        keep_props = props if layer["scope"] == "region" else {}   # only counties need attributes
+        # Region layers need attributes; so do census tracts (POP100 for population counts + density)
+        keep_props = props if layer["scope"] == "region" or layer["name"] == POPULATION_LAYER else {}
         gj = {"type": f["geometry"]["type"], "coordinates": round_coords(json.loads(json.dumps(f["geometry"]["coordinates"])))}
         con.execute(
             "INSERT OR IGNORE INTO features VALUES (?,?,?,?,?,?,?,?,?)",
@@ -225,6 +238,47 @@ def fmt_m(m):
 
 # ---------- population (added) ----------
 POPULATION_LAYER = "census_tracts"
+DENSITY_BINS = (100, 500, 1500, 4000)   # people per km² -> overlay levels 0-4
+TILE_DEG = 0.25                          # density overlay downloads tracts in fixed tiles so they cache well
+MAX_OVERLAY_DEG = 1.0                    # refuse bigger views (the map only asks at zoom >= 11)
+
+
+def density_per_km2(props):
+    """People per km² of land (2020 Census). None if the tract has no population or land area."""
+    pop, land = props.get("POP100"), props.get("AREALAND")
+    return pop / (land / 1e6) if pop is not None and land else None
+
+
+def population_overlay(bbox):
+    """Density overlay for the map view: download any missing tiles (in parallel), then return shaded tracts."""
+    minx, miny, maxx, maxy = bbox
+    if maxx - minx > MAX_OVERLAY_DEG or maxy - miny > MAX_OVERLAY_DEG:
+        return {"type": "FeatureCollection", "features": []}
+    layer = next(l for l in db.get_layers("site") if l["name"] == POPULATION_LAYER)
+    snap = lambda v: math.floor(v / TILE_DEG) * TILE_DEG
+    tiles = [(x, y, x + TILE_DEG, y + TILE_DEG)
+             for x in frange(snap(minx), maxx) for y in frange(snap(miny), maxy)]
+    tiles = [t for t in tiles if not is_covered(POPULATION_LAYER, t)]
+
+    def fetch(tile):
+        try:
+            return tile, fetch_arcgis(layer["url"], layer["where_clause"], tile, out_fields=layer["out_fields"])
+        except Exception as e:
+            print(f"[spatial] {POPULATION_LAYER} overlay tile {tile} failed: {e}")
+            return tile, None
+
+    with ThreadPoolExecutor(max_workers=6) as pool:   # network in parallel, DB writes one at a time below
+        for tile, feats in pool.map(fetch, tiles):
+            if feats is not None:
+                store_features(layer, feats)
+                db.execute("INSERT INTO coverage VALUES (?,?,?,?,?)", (POPULATION_LAYER, *tile))
+    return overlay_geojson(POPULATION_LAYER, bbox)
+
+
+def frange(start, stop):
+    while start < stop:
+        yield round(start, 6)
+        start += TILE_DEG
 
 
 def population_near(center_m, tracts_m, radius_m):

@@ -56,8 +56,14 @@ export default function Results({ result, selectedId, onSelect }) {
                 <span className="inline-block h-3 w-3 rounded-sm" style={{ background: f.color }} />
                 <span className="font-mono text-xs text-slate-500">{f.id}</span> {f.title}
               </span>
-              <span className="text-xs whitespace-nowrap">{BUFFER[f.buffer]}</span>
+              <span className="text-xs whitespace-nowrap">{f.population ? "Estimate" : BUFFER[f.buffer]}</span>
             </div>
+            {f.population && (
+              <div className="mt-2 grid grid-cols-2 gap-2">
+                <div><div className="text-lg font-semibold">{num(f.population.within_1km)}</div><div className="text-xs text-slate-500">people within 1 km</div></div>
+                <div><div className="text-lg font-semibold">{num(f.population.within_5km)}</div><div className="text-xs text-slate-500">people within 5 km</div></div>
+              </div>
+            )}
             <p className="mt-1">{f.detail}</p>
           </button>
         ))}

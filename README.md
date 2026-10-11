@@ -47,6 +47,7 @@ Toggle in the top-right panel. Only the part of the layer inside the current vie
 - **Water stress:** WRI Aqueduct 4.0 baseline water stress, 5 levels.
 - **Climate risk:** FEMA National Risk Index by county, 5 levels.
 - **Wildlife refuges and habitat:** USGS PAD-US. Loads at zoom 6 and closer.
+- **Population density:** people per km² of land for each 2020 Census tract (TIGERweb `POP100` / `AREALAND`), 5 levels. Loads at zoom 11 and closer; hover a tract to see its population. Tracts are downloaded in 0.25° tiles the first time an area is viewed (a few seconds), then cached.
 
 ### Expanded screening
 
