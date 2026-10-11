@@ -25,6 +25,8 @@ export default function Results({ result, selectedId, onSelect }) {
         </div>
       </div>
 
+      <GridAndPeople findings={findings} onSelect={onSelect} />
+
       <ProtectedLands findings={findings} onSelect={onSelect} />
 
       <Section title="Likely review triggers">
@@ -180,6 +182,27 @@ function Stat({ label, r }) {
     <div className="rounded-md border p-2">
       <div className="text-xs text-slate-500">{label}</div>
       <div className="font-semibold">{num(r.low)} – {num(r.high)}</div>
+    </div>
+  );
+}
+
+// Power grid access + people nearby (added). Closer power = easier connection; more people = more community impact.
+function GridAndPeople({ findings, onSelect }) {
+  const by = (layer) => findings.find((f) => f.layer === layer);
+  const sub = by("substations"), line = by("transmission_lines"), pop = by("census_tracts");
+  if (!sub && !line && !pop) return null;
+  const dist = (f) => (!f || f.buffer === "unknown" ? "unknown" : f.distance_m == null ? "none within 5 km" : fmtM(f.distance_m));
+  const Item = ({ f, label, value }) => (
+    <button onClick={() => f && onSelect(f.id)} className="rounded-md border p-2 text-left hover:bg-slate-50">
+      <div className="text-xs text-slate-500">{label}{f && <span className="ml-1 font-mono">[{f.id}]</span>}</div>
+      <div className="font-semibold">{value}</div>
+    </button>
+  );
+  return (
+    <div className="grid grid-cols-3 gap-2 text-sm">
+      <Item f={sub} label="Nearest substation" value={dist(sub)} />
+      <Item f={line} label="Nearest transmission line" value={dist(line)} />
+      <Item f={pop} label="People within 1 km" value={pop?.population ? num(pop.population.within_1km) : "unknown"} />
     </div>
   );
 }

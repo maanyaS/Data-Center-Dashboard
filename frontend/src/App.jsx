@@ -4,6 +4,7 @@ import MapView from "./MapView";
 import Results from "./Results";
 import Alerts from "./Alerts";
 import Search from "./Search";
+import Alternatives from "./Alternatives";
 
 export default function App() {
   const [tab, setTab] = useState("screen"); // "screen" | "alerts"
@@ -16,6 +17,7 @@ export default function App() {
   const [selectedId, setSelectedId] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [alts, setAlts] = useState(null); // nearby lower-risk candidates shown on the map
 
   useEffect(() => {
     getProjects().then(setProjects).catch(() => {});
@@ -25,6 +27,7 @@ export default function App() {
     setResult(null);
     setSelectedId(null);
     setError("");
+    setAlts(null);
     setTab("screen");
     next();
   }
@@ -48,6 +51,7 @@ export default function App() {
     setLoading(true);
     setError("");
     setSelectedId(null);
+    setAlts(null);
     try {
       setResult(await screenSite(pin.lat, pin.lon, Number(mw), name));
     } catch (e) {
@@ -121,12 +125,14 @@ export default function App() {
                 {error && <p className="rounded-md bg-red-50 p-2 text-sm text-red-700">{error}</p>}
               </div>
               {result && <Results result={result} selectedId={selectedId} onSelect={setSelectedId} />}
+              {result && <Alternatives key={`${result.site.lat},${result.site.lon},${result.site.mw}`} result={result}
+                onFound={setAlts} onGo={(c) => dropPin({ lat: c.lat, lon: c.lon })} />}
             </>
           )}
         </aside>
         <section className="relative flex-1">
           <MapView pin={pin} projects={projects} onPick={(lat, lon) => dropPin({ lat, lon })} onProject={openProject}
-            result={result} selectedId={selectedId} onSelect={setSelectedId} />
+            result={result} selectedId={selectedId} onSelect={setSelectedId} alts={alts} />
         </section>
       </main>
 

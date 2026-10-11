@@ -96,3 +96,21 @@ def speak(req: VoiceRequest):
     if audio is None:
         raise HTTPException(404, "ElevenLabs not configured (set ELEVENLABS_API_KEY).")
     return Response(audio, media_type="audio/mpeg")
+
+
+# ---------- Lower-risk spots nearby (added) ----------
+from . import alternatives  # noqa: E402
+
+
+class AltRequest(BaseModel):
+    lat: float
+    lon: float
+    mw: float
+
+
+@app.post("/alternatives")
+def find_alternatives(req: AltRequest):
+    out = alternatives.find_alternatives(req.lat, req.lon, req.mw)
+    if out is None:
+        raise HTTPException(400, "Site is outside US coverage.")
+    return out

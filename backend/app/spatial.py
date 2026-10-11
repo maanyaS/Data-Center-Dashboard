@@ -47,7 +47,10 @@ def overlay_detail(layer_name, props):
                 f"(WRI Aqueduct 4.0, share of available water already withdrawn).")
     return (f"{props.get('COUNTY')} County natural-hazard risk is {props.get('RISK_RATNG') or 'unknown'} "
             f"(FEMA National Risk Index); social vulnerability {props.get('SOVI_RATNG') or 'unknown'}, "
-            f"community resilience {props.get('RESL_RATNG') or 'unknown'}.")
+            f"community resilience {props.get('RESL_RATNG') or 'unknown'}."
+            + (f" Heat wave risk {props.get('HWAV_RISKR') or 'unknown'}, cold wave risk "
+               f"{props.get('CWAV_RISKR') or 'unknown'}, drought risk {props.get('DRGT_RISKR') or 'unknown'}."
+               if any(k in props for k in ("HWAV_RISKR", "CWAV_RISKR", "DRGT_RISKR")) else ""))
 
 
 def overlay_geojson(layer_name, bbox):
@@ -220,6 +223,38 @@ def fmt_m(m):
     return f"{m / 1000:.1f} km" if m >= 1000 else f"{round(m)} m"
 
 
+# ---------- population (added) ----------
+POPULATION_LAYER = "census_tracts"
+
+
+def population_near(center_m, tracts_m, radius_m):
+    """Area-weighted estimate: each Census tract adds its 2020 population times the share of its area inside the circle."""
+    circle = center_m.buffer(radius_m, 64)
+    total = 0.0
+    for g, pop in tracts_m:
+        if pop and g.area > 0 and g.intersects(circle):
+            total += pop * g.intersection(circle).area / g.area
+    return round(total)
+
+
+def population_finding(center_m, rows):
+    """Finding for the census tract layer: people living within 1 km and 5 km (estimate)."""
+    tracts = []
+    for f in rows:
+        pop = (json.loads(f["props"]) or {}).get("POP100")
+        tracts.append((transform(TO_M, shape(json.loads(f["geojson"]))), float(pop) if pop is not None else None))
+    if not tracts:
+        return {"buffer": "unknown", "distance_m": None, "population": None,
+                "detail": "Unknown - no Census tract data loaded for this area."}
+    if all(p is None for _, p in tracts):
+        return {"buffer": "unknown", "distance_m": None, "population": None,
+                "detail": "Unknown - Census tracts loaded without population counts."}
+    p1, p5 = population_near(center_m, tracts, 1000), population_near(center_m, tracts, 5000)
+    return {"buffer": "site", "distance_m": None, "population": {"within_1km": p1, "within_5km": p5},
+            "detail": (f"About {p1:,} people live within 1 km of the site and about {p5:,} within 5 km "
+                       f"(2020 Census tract populations, estimated by area share).")}
+
+
 def screen_point(lat, lon):
     """Check each layer around the point. Returns (state, county, findings)."""
     state, county = locate(lat, lon)
@@ -237,6 +272,9 @@ def screen_point(lat, lon):
             why = "layer not loaded yet" if not layer["url"] else "data download failed"
             findings.append({**base, "buffer": "unknown", "distance_m": None,
                              "detail": f"Unknown - {why}; this layer was not checked."})
+            continue
+        if layer["name"] == POPULATION_LAYER:
+            findings.append({**base, **population_finding(center, features_near(layer["name"], lat, lon, 5.5))})
             continue
         hits = []
         for f in features_near(layer["name"], lat, lon, 5.5):

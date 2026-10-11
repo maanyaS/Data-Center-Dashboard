@@ -49,14 +49,30 @@ const projectsGeojson = (projects) => ({
   })),
 });
 
-export default function MapView({ pin, projects, onPick, onProject, result, selectedId, onSelect }) {
+export default function MapView({ pin, projects, onPick, onProject, result, selectedId, onSelect, alts }) {
   const box = useRef(null);
   const map = useRef(null);
   const marker = useRef(null);
+  const altMarkers = useRef([]);
   const handlers = useRef({});
   const [overlay, setOverlay] = useState(""); // "", "water_stress", "climate_risk"
   const [wildlife, setWildlife] = useState(false);
   handlers.current = { onPick, onSelect, onProject, projects, overlay, wildlife };
+
+  // Lower-risk candidates from "Find a lower-risk spot nearby" (numbered blue pins)
+  useEffect(() => {
+    altMarkers.current.forEach((mk) => mk.remove());
+    altMarkers.current = [];
+    if (!map.current || !alts) return;
+    alts.forEach((c, i) => {
+      const el = document.createElement("div");
+      el.textContent = String(i + 1);
+      el.title = `#${i + 1} ${c.label} - score ${c.score}`;
+      el.style.cssText = "width:22px;height:22px;border-radius:50%;background:#0284c7;color:#fff;font:600 12px sans-serif;" +
+        "display:flex;align-items:center;justify-content:center;border:2px solid #fff;box-shadow:0 1px 3px rgba(0,0,0,.4)";
+      altMarkers.current.push(new maplibregl.Marker({ element: el }).setLngLat([c.lon, c.lat]).addTo(map.current));
+    });
+  }, [alts]);
 
   // Create the map once
   useEffect(() => {
@@ -90,6 +106,11 @@ export default function MapView({ pin, projects, onPick, onProject, result, sele
         filter: ["==", ["geometry-type"], "Polygon"],
         paint: { "fill-color": ["get", "color"],
           "fill-opacity": ["case", ["get", "selected"], 0.6, 0.25] } });
+      // Point findings (e.g. substations) as circles
+      m.addLayer({ id: "findings-point", type: "circle", source: "findings",
+        filter: ["==", ["geometry-type"], "Point"],
+        paint: { "circle-color": ["get", "color"], "circle-radius": ["case", ["get", "selected"], 8, 5],
+          "circle-stroke-color": "#fff", "circle-stroke-width": 1.5 } });
       m.addLayer({ id: "findings-line", type: "line", source: "findings",
         paint: { "line-color": ["get", "color"],
           "line-width": ["case", ["get", "selected"], 3, 1] } });

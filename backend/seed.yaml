@@ -129,6 +129,36 @@ layers:
   scope: region
   color: '#16a34a'
   out_fields: Unit_Nm,Des_Tp
+- name: census_tracts
+  title: Population (2020 Census tracts)
+  url: https://tigerweb.geo.census.gov/arcgis/rest/services/TIGERweb/Tracts_Blocks/MapServer/10
+  where: 1=1
+  label_field: NAME
+  out_fields: NAME,POP100,HU100
+  states:
+  - '*'
+  scope: site
+  color: '#f59e0b'
+- name: transmission_lines
+  title: High-voltage transmission line (HIFLD, 69-765 kV)
+  url: https://services2.arcgis.com/wdQEqhSQSuYA89VW/ArcGIS/rest/services/ElectricTransLines12012021/FeatureServer/0
+  where: 1=1
+  label_field: VOLT_CLASS
+  out_fields: VOLT_CLASS,VOLTAGE,OWNER
+  states:
+  - '*'
+  scope: site
+  color: '#e11d48'
+- name: substations
+  title: Electric substation (HIFLD)
+  url: https://services5.arcgis.com/HDRa0B57OVrv2E1q/ArcGIS/rest/services/Electric_Substations/FeatureServer/0
+  where: 1=1
+  label_field: NAME
+  out_fields: NAME,MAX_VOLT,STATUS
+  states:
+  - '*'
+  scope: site
+  color: '#be123c'
 - name: water_stress
   title: Baseline water stress (WRI Aqueduct 4.0)
   url: https://services.arcgis.com/P3ePLMYs2RVChkJx/arcgis/rest/services/aqueduct_water_risk/FeatureServer/1
@@ -142,13 +172,13 @@ layers:
 - name: climate_risk
   title: FEMA National Risk Index (county)
   url: https://services.arcgis.com/XG15cJAlne2vxtgt/arcgis/rest/services/National_Risk_Index_Counties/FeatureServer/0
-  where: 1=1
+  where: RISK_RATNG IS NOT NULL   # changed from 1=1 so the layer re-downloads with heat/cold/drought fields
   label_field: RISK_RATNG
   states:
   - '*'
   scope: region
   color: '#9333ea'
-  out_fields: COUNTY,STATEABBRV,RISK_RATNG,RISK_SCORE,SOVI_RATNG,RESL_RATNG
+  out_fields: COUNTY,STATEABBRV,RISK_RATNG,RISK_SCORE,SOVI_RATNG,RESL_RATNG,HWAV_RISKR,CWAV_RISKR,DRGT_RISKR
 - name: counties
   title: US Census counties
   url: https://tigerweb.geo.census.gov/arcgis/rest/services/TIGERweb/State_County/MapServer/1
