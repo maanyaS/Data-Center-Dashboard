@@ -69,7 +69,7 @@ CREATE TABLE IF NOT EXISTS alerts (
 
 def connect():
     DB_PATH.parent.mkdir(exist_ok=True)
-    con = sqlite3.connect(DB_PATH)
+    con = sqlite3.connect(DB_PATH, timeout=30)   # wait (don't fail) if the server is writing at the same time
     con.row_factory = sqlite3.Row
     return con
 
