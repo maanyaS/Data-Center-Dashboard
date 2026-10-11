@@ -1,4 +1,5 @@
-// All backend calls in one place. VITE_API_URL = the Render URL in production; "/api" locally (Vite proxy).
+// All backend calls in one place. "/api" on Vercel (same domain) and locally (Vite proxy);
+// set VITE_API_URL only when the frontend calls a backend on another domain (e.g. Render).
 const API = (import.meta.env.VITE_API_URL || "/api").replace(/\/$/, "");
 
 async function call(path, options) {

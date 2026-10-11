@@ -2,7 +2,7 @@
 # Secrets marked "sync: false" are entered in the Render dashboard (never committed).
 services:
   - type: web
-    name: sitecheck-api
+    name: before-the-build-api
     runtime: python
     plan: free
     rootDir: backend
@@ -22,7 +22,7 @@ services:
         sync: false
       - key: ELEVENLABS_VOICE_ID
         value: EXAVITQu4vr4xnSDxMaL
-      # Your GitHub Pages address, e.g. https://maanyas.github.io (no trailing slash)
+      # Address of the site that calls this API, e.g. https://before-the-build.vercel.app (no trailing slash)
       - key: ALLOWED_ORIGINS
         sync: false
       - key: LLM_BASE_URL

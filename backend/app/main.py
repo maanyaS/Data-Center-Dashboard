@@ -1,4 +1,4 @@
-"""SiteCheck API. Run from backend/:  uvicorn app.main:app
+"""Before the Build API. Run from backend/:  uvicorn app.main:app
 
 Secrets (Turso, Gemini, ElevenLabs) are read from environment variables / backend/.env only
 and are never returned by any endpoint.
@@ -19,16 +19,32 @@ load_dotenv()
 
 from . import alerts, briefs, db, estimates, rules, spatial, voice  # noqa: E402
 
-ON_SERVER = bool(os.getenv("RENDER"))   # Render sets RENDER=true
+ON_SERVER = bool(os.getenv("RENDER") or os.getenv("VERCEL"))   # Render sets RENDER=true, Vercel sets VERCEL=1
 # Interactive API docs (/docs) only when running locally
-app = FastAPI(title="SiteCheck", docs_url=None if ON_SERVER else "/docs",
+app = FastAPI(title="Before the Build", docs_url=None if ON_SERVER else "/docs",
               redoc_url=None, openapi_url=None if ON_SERVER else "/openapi.json")
 
-# Only these websites may call the API from a browser (comma-separated), e.g. your GitHub Pages site
+# Only these websites may call the API from a browser (comma-separated), e.g. your Vercel site
 ALLOWED_ORIGINS = [o.strip() for o in os.getenv(
     "ALLOWED_ORIGINS", "http://localhost:5173,http://127.0.0.1:5173").split(",") if o.strip()]
 app.add_middleware(CORSMiddleware, allow_origins=ALLOWED_ORIGINS,
                    allow_methods=["GET", "POST"], allow_headers=["Content-Type"])
+
+
+class StripApiPrefix:
+    """On Vercel the API is public under /api and requests arrive with that prefix (/api/screen);
+    drop it so the same routes work there, on Render, and locally (where Vite strips it)."""
+    def __init__(self, app):
+        self.app = app
+
+    async def __call__(self, scope, receive, send):
+        path = scope.get("path", "")
+        if scope["type"] == "http" and (path == "/api" or path.startswith("/api/")):
+            scope = dict(scope, path=path[4:] or "/")
+        await self.app(scope, receive, send)
+
+
+app.add_middleware(StripApiPrefix)
 
 # Simple per-visitor rate limit for the expensive endpoints (Gemini, downloads, ElevenLabs)
 RATE_LIMIT = int(os.getenv("RATE_LIMIT_PER_MIN", "10"))

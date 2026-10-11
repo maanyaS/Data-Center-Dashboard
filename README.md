@@ -42,7 +42,7 @@ Built at HackRU Fall 2026.
 | Backend | Python, FastAPI, Shapely, PyProj |
 | Database | SQLite schema on Turso (local SQLite file if Turso isn't set) |
 | AI | Google Gemini (OpenAI-compatible API), ElevenLabs TTS |
-| Hosting | Render (API), GitHub Pages (site) |
+| Hosting | Vercel (site + API), or Render (API) |
 
 ## Data sources
 
@@ -125,4 +125,4 @@ Never commit `.env`. To enable the pre-commit secret check: `git config core.hoo
 - Lower-risk spots are areas to look at, not recommended sites.
 
 ### Notes
-vercel.json is unused; the frontend deploys from frontend/ and the API runs on Render
+Vercel: one project with two services (vercel.json) - the frontend at / and the API (backend/) at /api, on the same domain. Render (render.yaml) can still host the API separately.

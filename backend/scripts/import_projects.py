@@ -25,7 +25,7 @@ def census(query):
 def osm(query):
     time.sleep(1)   # OpenStreetMap Nominatim allows 1 request/second
     res = requests.get(NOMINATIM, params={"q": query, "format": "json", "limit": 1, "countrycodes": "us"},
-                       headers={"User-Agent": "SiteCheck/1.0 (hackathon project)"}, timeout=30).json()
+                       headers={"User-Agent": "BeforeTheBuild/1.0 (hackathon project)"}, timeout=30).json()
     return (float(res[0]["lat"]), float(res[0]["lon"])) if res else None
 
 

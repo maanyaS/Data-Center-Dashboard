@@ -1,11 +1,21 @@
 {
-  "buildCommand": "cd frontend && npm install && npm run build",
-  "outputDirectory": "frontend/dist",
-  "functions": {
-    "api/index.py": {
-      "maxDuration": 60,
-      "includeFiles": "backend/{app/**,rules.yaml,seed.yaml,projects.csv}"
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "services": {
+    "before-the-build-api": {
+      "root": "backend",
+      "framework": "fastapi",
+      "entrypoint": "app.main:app",
+      "functions": {
+        "app/main.py": { "maxDuration": 60 }
+      }
+    },
+    "before-the-build-web": {
+      "root": "frontend",
+      "framework": "vite"
     }
   },
-  "rewrites": [{ "source": "/api/(.*)", "destination": "/api/index.py" }]
+  "rewrites": [
+    { "source": "/api/(.*)", "destination": { "service": "before-the-build-api" } },
+    { "source": "/(.*)", "destination": { "service": "before-the-build-web" } }
+  ]
 }
