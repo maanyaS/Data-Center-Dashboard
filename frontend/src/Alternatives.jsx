@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { findAlternatives } from "./api";
+import Term from "./Term";
 
 // "Find a lower-risk spot nearby" + side-by-side comparison with the original site.
 const fmtM = (m, c) => c?.checked_km
@@ -7,6 +8,9 @@ const fmtM = (m, c) => c?.checked_km
   : m == null ? "None" : m >= 1000 ? `${(m / 1000).toFixed(1)} km` : `${m} m`;
 const ROWS_FIRST = ["fema_flood", "nj_wetlands", "nwi_wetlands", "ny_wetlands", "de_wetlands",
   "protected_areas", "nj_open_space", "ny_protected", "nj_highlands", "nj_pinelands", "nj_cafra", "critical_habitat"];
+
+const STEP_KM = 10;   // each "search farther" adds this much
+const MAX_KM = 100;   // same cap as the /alternatives endpoint
 
 // For power lines and substations, closer is GOOD (cheaper, faster grid connection)
 const CLOSER_IS_BETTER = ["transmission_lines", "substations"];
@@ -26,15 +30,21 @@ export default function Alternatives({ result, onFound, onGo }) {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [searchKm, setSearchKm] = useState(null);   // radius of the last search
+  const [declined, setDeclined] = useState(false);  // said "no" to searching farther
   const { site } = result;
   const radius = site.radius_km || 5;
+  // Nothing better found -> offer to look 10 km farther each time (the server allows up to MAX_KM)
+  const nextKm = Math.min((searchKm || radius) + STEP_KM, MAX_KM);
 
-  async function run() {
+  async function run(km = radius) {
     setLoading(true);
     setError("");
+    setDeclined(false);
     try {
-      const d = await findAlternatives(site.lat, site.lon, Number(site.mw) || 100, radius);
+      const d = await findAlternatives(site.lat, site.lon, Number(site.mw) || 100, km);
       setData(d);
+      setSearchKm(km);
       onFound(d.candidates);
     } catch (e) {
       setError(e.message);
@@ -51,7 +61,7 @@ export default function Alternatives({ result, onFound, onGo }) {
             ? `Tests 40 points: 24 within 2.5 km plus 16 at ${radius / 2} and ${radius} km (far spots take ~10-20 s)`
             : "Tests 24 points within 2.5 km"} using the same layers and rules, then compares the best ones to this site.
         </p>
-        <button onClick={run} disabled={loading}
+        <button onClick={() => run()} disabled={loading}
           className="mt-2 w-full rounded-md bg-sky-600 py-1.5 font-medium text-white hover:bg-sky-700 disabled:opacity-40">
           {loading ? "Testing nearby spots…" : "Find a lower-risk spot nearby"}
         </button>
@@ -73,6 +83,32 @@ export default function Alternatives({ result, onFound, onGo }) {
       <div className="font-semibold text-sky-900">Lower-risk spots nearby</div>
       <p className="text-xs text-slate-600">{data.message}</p>
 
+      {/* Nothing better found: ask before searching farther (wider searches take longer) */}
+      {data.candidates.length === 0 && !declined && (
+        <div role="group" aria-label="Search farther" className="rounded-md border border-sky-200 bg-sky-50 p-2.5">
+          {searchKm >= MAX_KM ? (
+            <p className="text-xs text-sky-900">Searched the maximum distance ({MAX_KM} km).</p>
+          ) : (
+            <>
+              <p className="text-xs text-sky-900">
+                Search 10 km farther, out to <b>{nextKm} km</b>? Far spots take about 10–20 seconds to check.
+              </p>
+              <div className="mt-2 flex gap-2">
+                <button onClick={() => run(nextKm)} disabled={loading} aria-busy={loading}
+                  className="rounded-md bg-sky-600 px-3 py-1 text-xs font-medium text-white hover:bg-sky-700 disabled:opacity-40">
+                  {loading ? `Searching out to ${nextKm} km…` : `Yes, search ${nextKm} km`}
+                </button>
+                <button onClick={() => setDeclined(true)} disabled={loading}
+                  className="rounded-md border border-sky-300 px-3 py-1 text-xs text-sky-800 hover:bg-white disabled:opacity-40">
+                  No thanks
+                </button>
+              </div>
+              {error && <p role="alert" className="mt-2 text-xs text-red-700">{error}</p>}
+            </>
+          )}
+        </div>
+      )}
+
       {/* Score bars: the quick visual */}
       <div className="space-y-1.5">
         {cols.map((c, i) => (
@@ -85,7 +121,7 @@ export default function Alternatives({ result, onFound, onGo }) {
                 style={{ width: `${(c.score / maxScore) * 100}%` }} />
             </div>
             <span className="w-28 shrink-0 text-right tabular-nums">
-              score {c.score} · {c.high} high
+              <Term k="score">score</Term> {c.score} · {c.high} high
             </span>
           </div>
         ))}
@@ -120,7 +156,7 @@ export default function Alternatives({ result, onFound, onGo }) {
               </tr>
             )}
             <tr className="border-b border-slate-100">
-              <td className="py-1 pr-2 text-slate-600">Water stress</td>
+              <td className="py-1 pr-2 text-slate-600"><Term k="water stress">Water stress</Term></td>
               {cols.map((c) => <td key={c.label} className="py-1 pr-2">{c.water_stress || "unknown"}</td>)}
             </tr>
             <tr>

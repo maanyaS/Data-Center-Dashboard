@@ -1,5 +1,6 @@
 import { useRef, useState } from "react";
 import { speak } from "./api";
+import Term from "./Term";
 
 const RISK = {
   high: "bg-red-100 text-red-700",
@@ -80,16 +81,16 @@ export default function Results({ result, selectedId, onSelect }) {
 
       <Section title="Estimated demand (ranges)">
         <div className="grid grid-cols-2 gap-2 text-sm">
-          <Stat label="Electricity, MWh/year" r={estimates.power_mwh_per_year} />
-          <Stat label="On-site water, gal/day" r={estimates.water_gal_per_day} />
+          <Stat label={<>Electricity, <Term k="MWh">MWh</Term>/year</>} r={estimates.power_mwh_per_year} />
+          <Stat label={<>On-site water, <Term k="gal">gal</Term>/day</>} r={estimates.water_gal_per_day} />
           {estimates.grid && <>
-            <Stat label="CO₂, tons/year" r={estimates.co2_tons_per_year} />
+            <Stat label={<><Term k="CO₂">CO₂</Term>, tons/year</>} r={estimates.co2_tons_per_year} />
             <Stat label="Electricity cost, $/year" r={estimates.power_cost_usd_per_year} />
           </>}
         </div>
         {estimates.grid && (
           <p className="text-xs text-slate-500">
-            Grid: {estimates.grid.egrid_name} ({estimates.grid.co2_lb_per_mwh} lb CO₂/MWh) · {estimates.grid.price_cents_kwh}¢/kWh industrial
+            <Term k="eGRID">Grid</Term>: {estimates.grid.egrid_name} ({estimates.grid.co2_lb_per_mwh} lb CO₂/<Term k="MWh">MWh</Term>) · {estimates.grid.price_cents_kwh}<Term k="¢/kWh">¢/kWh</Term> industrial
           </p>
         )}
         <details className="text-xs text-slate-500">
@@ -112,7 +113,7 @@ export default function Results({ result, selectedId, onSelect }) {
                   <Icon layer={f.layer} color={f.color} />
                   <span className="font-mono text-xs text-slate-500">{f.id}</span> {f.title}
                 </span>
-                <span className="text-xs whitespace-nowrap">{f.population ? "Estimate" : bufferLabel(f)}</span>
+                <span className="text-xs whitespace-nowrap">{f.population ? <Term k="estimate" focusable={false}>Estimate</Term> : bufferLabel(f)}</span>
               </div>
               {f.population && (
                 <div className="mt-2 grid grid-cols-2 gap-2">
@@ -141,16 +142,16 @@ function Summary({ result }) {
     <section aria-label="Screening summary" className="space-y-2">
       <div className="rounded-xl bg-slate-800 p-4 text-white shadow-sm">
         {site.name && <div className="font-medium">{site.name}</div>}
-        <div className="text-sm opacity-80">{site.county}, {site.state} · {site.mw} MW</div>
+        <div className="text-sm opacity-80">{site.county}, {site.state} · {site.mw} <Term k="MW">MW</Term></div>
         <div className="mt-2 flex flex-wrap items-center gap-2">
-          <span className={`rounded-full px-3 py-1 text-sm font-semibold ${level[1]}`}>{level[0]}</span>
-          <span className="text-sm">{triggers.length} likely reviews · {high} high delay</span>
+          <span className={`rounded-full px-3 py-1 text-sm font-semibold ${level[1]}`}><Term k={level[0]}>{level[0]}</Term></span>
+          <span className="text-sm">{triggers.length} <Term k="likely_reviews">likely reviews</Term> · {high} <Term k="high delay">high delay</Term></span>
         </div>
       </div>
       <div className="grid grid-cols-3 gap-2 text-sm">
-        <Tile icon="water" label="Water / day" value={range(estimates.water_gal_per_day, " gal")} />
-        <Tile icon="hazard" label="CO₂ / year" value={estimates.co2_tons_per_year ? range(estimates.co2_tons_per_year, " t") : "unknown"} />
-        <Tile icon="people" label="People ≤1 km" value={pop ? num(pop.within_1km) : "not checked"} />
+        <Tile icon="water" label={<Term k="gal">Water / day</Term>} value={range(estimates.water_gal_per_day, " gal")} />
+        <Tile icon="hazard" label={<><Term k="CO₂">CO₂</Term> / year</>} value={estimates.co2_tons_per_year ? range(estimates.co2_tons_per_year, " t") : "unknown"} />
+        <Tile icon="people" label={<Term k="estimate">People ≤1 km</Term>} value={pop ? num(pop.within_1km) : "not checked"} />
       </div>
     </section>
   );
@@ -342,7 +343,7 @@ function Section({ title, children }) {
 }
 
 function Badge({ risk }) {
-  return <span className={`shrink-0 rounded-full px-2 py-0.5 text-xs font-medium ${RISK[risk] || RISK.low}`}>{risk} delay risk</span>;
+  return <span className={`shrink-0 rounded-full px-2 py-0.5 text-xs font-medium ${RISK[risk] || RISK.low}`}><Term k={`${risk} delay`}>{risk} delay risk</Term></span>;
 }
 
 function Stat({ label, r }) {
@@ -368,9 +369,9 @@ function GridAndPeople({ findings, onSelect }) {
   );
   return (
     <div className="grid grid-cols-3 gap-2 text-sm">
-      <Item f={sub} label="Nearest substation" value={dist(sub)} />
-      <Item f={line} label="Nearest transmission line" value={dist(line)} />
-      <Item f={pop} label="People within 1 km" value={!pop ? "not checked" : pop.population ? num(pop.population.within_1km) : "unknown"} />
+      <Item f={sub} label={<Term k="substation" focusable={false}>Nearest substation</Term>} value={dist(sub)} />
+      <Item f={line} label={<Term k="transmission line" focusable={false}>Nearest transmission line</Term>} value={dist(line)} />
+      <Item f={pop} label={<Term k="estimate" focusable={false}>People within 1 km</Term>} value={!pop ? "not checked" : pop.population ? num(pop.population.within_1km) : "unknown"} />
     </div>
   );
 }

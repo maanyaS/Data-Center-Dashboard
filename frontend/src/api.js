@@ -1,5 +1,4 @@
-// All backend calls in one place.
-// Local dev: /api is proxied to localhost:8000. GitHub Pages: VITE_API_URL is the Render address.
+// All backend calls in one place. VITE_API_URL = the Render URL in production; "/api" locally (Vite proxy).
 const API = (import.meta.env.VITE_API_URL || "/api").replace(/\/$/, "");
 
 async function call(path, options) {
@@ -10,6 +9,7 @@ async function call(path, options) {
   }
   return res;
 }
+
 
 const post = (path, body) =>
   call(path, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });

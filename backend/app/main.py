@@ -183,7 +183,9 @@ def speak(req: VoiceRequest, request: Request):
     rate_limit(request, "voice")
     try:
         audio = voice.tts(req.text, req.voice)
-    except Exception as e:   # quota used up, voice not allowed on the plan, ElevenLabs down...
+    except voice.VoiceError as e:   # ElevenLabs said no: quota, key, voice not on the plan...
+        raise HTTPException(502, str(e))
+    except Exception as e:   # network trouble, ElevenLabs down...
         print(f"[voice] ElevenLabs error: {e}")
         raise HTTPException(502, "The voice service is unavailable right now - try again later.")
     if audio is None:
