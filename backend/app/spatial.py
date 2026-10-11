@@ -24,6 +24,7 @@ STATE_FIPS = dict(zip(
     "40 41 42 44 45 46 47 48 49 50 51 53 54 55 56 72".split(),
     "AL AK AZ AR CA CO CT DE DC FL GA HI ID IL IN IA KS KY LA ME MD MA MI MN MS MO MT NE NV NH NJ NM NY NC ND OH "
     "OK OR PA RI SC SD TN TX UT VT VA WA WV WI WY PR".split()))
+OPTIONAL_LAYERS = {"census_tracts"}   # only downloaded/checked when the user asks (population)
 NOT_SCREENED = ("counties", "egrid_subregions", "wildlife_areas")   # region layers not turned into findings
 
 # Region overlays: every feature gets a 0-4 "level" (same 5-step color scale for both).
@@ -125,7 +126,8 @@ def store_features(layer, features):
         src_id = str(f.get("id") or props.get("OBJECTID") or props.get("objectid") or hash(geom.wkb))
         label = str(props.get(layer["label_field"]) or "")
         minx, miny, maxx, maxy = geom.bounds
-        keep_props = props if layer["scope"] == "region" else {}   # only counties need attributes
+        # Keep attributes only where they're used: region layers, and layers that list out_fields (e.g. POP100)
+        keep_props = props if layer["scope"] == "region" or layer["out_fields"] else {}
         gj = {"type": f["geometry"]["type"], "coordinates": round_coords(json.loads(json.dumps(f["geometry"]["coordinates"])))}
         con.execute(
             "INSERT OR IGNORE INTO features VALUES (?,?,?,?,?,?,?,?,?)",
@@ -163,12 +165,13 @@ def ensure_region():
         download(layer, REGION_BBOX, simplify_deg=0.003)   # ~300 m, national layers
 
 
-def ensure_area(lat, lon, state=None):
-    """Make sure the site-scope layers for this state are cached around the point. Returns {layer: error}."""
+def ensure_area(lat, lon, state=None, optional=()):
+    """Make sure the site-scope layers for this state are cached around the point. Returns {layer: error}.
+    Optional layers (e.g. population) are only downloaded if listed in `optional`."""
     bbox = bbox_around(lat, lon, FETCH_RADIUS_KM)
     errors = {}
     for layer in db.get_layers("site"):
-        if state and not applies(layer, state):
+        if (state and not applies(layer, state)) or (layer["name"] in OPTIONAL_LAYERS and layer["name"] not in optional):
             continue
         err = download(layer, bbox)
         if err:
@@ -255,16 +258,17 @@ def population_finding(center_m, rows):
                        f"(2020 Census tract populations, estimated by area share).")}
 
 
-def screen_point(lat, lon):
-    """Check each layer around the point. Returns (state, county, findings)."""
+def screen_point(lat, lon, optional=()):
+    """Check each layer around the point. Returns (state, county, findings).
+    `optional`: optional layers to include, e.g. ("census_tracts",) for population."""
     state, county = locate(lat, lon)
     if state is None:
         return None, None, []
-    errors = ensure_area(lat, lon, state)
+    errors = ensure_area(lat, lon, state, optional)
     center = transform(TO_M, Point(lon, lat))
     findings = []
     for layer in db.get_layers("site"):
-        if not applies(layer, state):
+        if not applies(layer, state) or (layer["name"] in OPTIONAL_LAYERS and layer["name"] not in optional):
             continue
         base = {"id": f"F{len(findings) + 1}", "layer": layer["name"], "title": layer["title"],
                 "color": layer["color"], "source": layer["url"] or "not loaded", "geometry": None}

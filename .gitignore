@@ -2,7 +2,7 @@ __pycache__/
 .venv/
 .env
 .vercel/
-backend/data/*
-!backend/data/sitecheck.db
+# Database lives in Turso (backend/.env); the local data/ folder is only a cache/backup
+backend/data/
 node_modules/
 frontend/dist/

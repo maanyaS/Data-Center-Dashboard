@@ -15,6 +15,9 @@ for name in site_layers:
     con.execute("DELETE FROM coverage WHERE layer = ?", (name,))
 con.execute("DELETE FROM screenings")
 con.commit()
-con.execute("VACUUM")
+if db.TURSO_URL:
+    print("Cleared the per-site cache and screening history in Turso.")
+else:
+    con.execute("VACUUM")
+    print(f"Slimmed {db.DB_PATH}: {db.DB_PATH.stat().st_size / 1e6:.1f} MB")
 con.close()
-print(f"Slimmed {db.DB_PATH}: {db.DB_PATH.stat().st_size / 1e6:.1f} MB")

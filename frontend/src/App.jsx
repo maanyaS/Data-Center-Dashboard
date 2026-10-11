@@ -13,6 +13,7 @@ export default function App() {
   const [pin, setPin] = useState(null); // {lat, lon}
   const [name, setName] = useState("");
   const [mw, setMw] = useState(100);
+  const [withPopulation, setWithPopulation] = useState(false);
   const [result, setResult] = useState(null);
   const [selectedId, setSelectedId] = useState(null);
   const [loading, setLoading] = useState(false);
@@ -53,7 +54,7 @@ export default function App() {
     setSelectedId(null);
     setAlts(null);
     try {
-      setResult(await screenSite(pin.lat, pin.lon, Number(mw), name));
+      setResult(await screenSite(pin.lat, pin.lon, Number(mw), name, withPopulation));
     } catch (e) {
       setError(e.message);
       setResult(null);
@@ -115,6 +116,10 @@ export default function App() {
                       Planned capacity
                       <input type="number" min="1" value={mw} onChange={(e) => setMw(e.target.value)}
                         className="w-24 rounded-md border px-2 py-1" /> MW
+                    </label>
+                    <label className="flex cursor-pointer items-center gap-2 text-sm">
+                      <input type="checkbox" checked={withPopulation} onChange={(e) => setWithPopulation(e.target.checked)} />
+                      Include population nearby (2020 Census, slower)
                     </label>
                     <button onClick={runScreen} disabled={loading}
                       className="w-full rounded-md bg-emerald-600 py-2 font-medium text-white hover:bg-emerald-700 disabled:opacity-40">

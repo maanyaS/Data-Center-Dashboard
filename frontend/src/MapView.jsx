@@ -30,14 +30,23 @@ function bounds(geometry) {
 }
 
 // Load a region layer into a map source, only for the current view.
-// Wildlife areas are small and numerous, so they only load when zoomed in (zoom >= 6).
+// Wildlife areas are small and numerous, so they only load when zoomed in (zoom >= 7).
+// A newer request cancels the older one for the same source, so fast clicking/panning
+// doesn't pile up requests or let an old, slow response overwrite a newer one.
+const inFlight = {};
 function loadOverlay(m, name, sourceId = "overlay") {
-  const src = m.getSource(sourceId);
+  const src = m?.getSource(sourceId);
   if (!src) return;
-  if (!name || (sourceId === "wildlife" && m.getZoom() < 6)) return src.setData(EMPTY);
+  inFlight[sourceId]?.abort();
+  if (!name || (sourceId === "wildlife" && m.getZoom() < 7)) {
+    src.setData(EMPTY);
+    return;
+  }
+  const ctrl = (inFlight[sourceId] = new AbortController());
   const b = m.getBounds();
-  getOverlay(name, [b.getWest(), b.getSouth(), b.getEast(), b.getNorth()].map((x) => x.toFixed(3)).join(","))
-    .then((g) => src.setData(g)).catch(() => {});
+  getOverlay(name, [b.getWest(), b.getSouth(), b.getEast(), b.getNorth()].map((x) => x.toFixed(3)).join(","), ctrl.signal)
+    .then((g) => { if (!ctrl.signal.aborted) src.setData(g); })
+    .catch(() => {});
 }
 
 // Existing projects -> GeoJSON points for the map
@@ -133,9 +142,14 @@ export default function MapView({ pin, projects, onPick, onProject, result, sele
       });
       m.on("mouseleave", "wildlife", () => tip.remove());
     });
+    // Reload overlays once the map stops moving (debounced, so dragging doesn't fire dozens of requests)
+    let moveTimer;
     m.on("moveend", () => {
-      loadOverlay(m, handlers.current.overlay);
-      loadOverlay(m, handlers.current.wildlife && "wildlife_areas", "wildlife");
+      clearTimeout(moveTimer);
+      moveTimer = setTimeout(() => {
+        loadOverlay(m, handlers.current.overlay);
+        loadOverlay(m, handlers.current.wildlife && "wildlife_areas", "wildlife");
+      }, 300);
     });
     m.on("click", (e) => {
       const proj = m.queryRenderedFeatures(e.point, { layers: ["projects"] })[0];
@@ -155,8 +169,8 @@ export default function MapView({ pin, projects, onPick, onProject, result, sele
   }, [pin]);
 
   // Overlay: only the part inside the current view is downloaded (re-loaded after panning/zooming)
-  useEffect(() => loadOverlay(map.current, overlay), [overlay]);
-  useEffect(() => loadOverlay(map.current, wildlife && "wildlife_areas", "wildlife"), [wildlife]);
+  useEffect(() => { loadOverlay(map.current, overlay); }, [overlay]);
+  useEffect(() => { loadOverlay(map.current, wildlife && "wildlife_areas", "wildlife"); }, [wildlife]);
 
   // Drop the "drag pin" chip onto the map -> new pin at that spot
   function onDrop(e) {
@@ -220,7 +234,7 @@ export default function MapView({ pin, projects, onPick, onProject, result, sele
           <span className="inline-block h-3 w-3 rounded-sm" style={{ background: "#16a34a", opacity: 0.6 }} />
           Wildlife refuges & habitat
         </label>
-        {wildlife && <div className="pl-5 text-slate-400">PAD-US · zoom in to see areas</div>}
+        {wildlife && <div className="pl-5 text-slate-400">PAD-US · zoom in to county level to see areas</div>}
         {overlay && (
           <div className="mt-2 border-t pt-2">
             <div className="mb-1 text-slate-500">{OVERLAYS[overlay].title}</div>

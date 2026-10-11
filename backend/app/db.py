@@ -1,4 +1,5 @@
-"""SQLite database: one file, data/sitecheck.db. Created on first use; seeded from seed.yaml + projects.csv."""
+"""Database: hosted Turso (if TURSO_DATABASE_URL is set in backend/.env) or the local file data/sitecheck.db.
+Created on first use; seeded from seed.yaml + projects.csv."""
 import csv
 import json
 import os
@@ -7,15 +8,21 @@ import sqlite3
 from pathlib import Path
 
 import yaml
+from dotenv import load_dotenv
+
+from . import turso
 
 BACKEND = Path(__file__).resolve().parent.parent
+load_dotenv(BACKEND / ".env")   # scripts import this module directly, so load settings here too
+TURSO_URL = os.getenv("TURSO_DATABASE_URL")
+TURSO_TOKEN = os.getenv("TURSO_AUTH_TOKEN")
 DB_PATH = BACKEND / "data" / "sitecheck.db"
 SEED_PATH = BACKEND / "seed.yaml"
 PROJECTS_CSV = BACKEND / "projects.csv"   # hand-maintained project list (opens in Excel)
 
 # Vercel's filesystem is read-only except /tmp: copy the bundled DB there.
 # (Writes on Vercel - new screenings, newly cached areas - are temporary.)
-if os.getenv("VERCEL"):
+if os.getenv("VERCEL") and not TURSO_URL:
     tmp = Path("/tmp/sitecheck.db")
     if not tmp.exists() and DB_PATH.exists():
         shutil.copy(DB_PATH, tmp)
@@ -68,6 +75,8 @@ CREATE TABLE IF NOT EXISTS alerts (
 
 
 def connect():
+    if TURSO_URL:
+        return turso.Connection(TURSO_URL, TURSO_TOKEN)
     DB_PATH.parent.mkdir(exist_ok=True)
     con = sqlite3.connect(DB_PATH, timeout=30)   # wait (don't fail) if the server is writing at the same time
     con.row_factory = sqlite3.Row

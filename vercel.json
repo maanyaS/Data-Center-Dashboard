@@ -4,7 +4,7 @@
   "functions": {
     "api/index.py": {
       "maxDuration": 60,
-      "includeFiles": "backend/{app/**,data/sitecheck.db,rules.yaml,seed.yaml}"
+      "includeFiles": "backend/{app/**,rules.yaml,seed.yaml,projects.csv}"
     }
   },
   "rewrites": [{ "source": "/api/(.*)", "destination": "/api/index.py" }]

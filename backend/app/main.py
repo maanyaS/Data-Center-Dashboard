@@ -25,10 +25,11 @@ class ScreenRequest(BaseModel):
     lon: float
     mw: float
     name: str = ""
+    population: bool = False   # opt-in: downloads Census tracts around the site
 
 
-def run_screen(lat, lon, mw, name=""):
-    state, county, findings = spatial.screen_point(lat, lon)
+def run_screen(lat, lon, mw, name="", population=False):
+    state, county, findings = spatial.screen_point(lat, lon, ("census_tracts",) if population else ())
     if state is None:
         raise HTTPException(400, "Site is outside US coverage.")
     egrid = (spatial.region_props("egrid_subregions", lat, lon) or {}).get("Subregion")
@@ -48,7 +49,7 @@ def run_screen(lat, lon, mw, name=""):
 
 @app.post("/screen")
 def screen(req: ScreenRequest):
-    return run_screen(req.lat, req.lon, req.mw, req.name)
+    return run_screen(req.lat, req.lon, req.mw, req.name, req.population)
 
 
 @app.get("/projects")

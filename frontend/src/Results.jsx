@@ -202,7 +202,7 @@ function GridAndPeople({ findings, onSelect }) {
     <div className="grid grid-cols-3 gap-2 text-sm">
       <Item f={sub} label="Nearest substation" value={dist(sub)} />
       <Item f={line} label="Nearest transmission line" value={dist(line)} />
-      <Item f={pop} label="People within 1 km" value={pop?.population ? num(pop.population.within_1km) : "unknown"} />
+      <Item f={pop} label="People within 1 km" value={!pop ? "not checked" : pop.population ? num(pop.population.within_1km) : "unknown"} />
     </div>
   );
 }
