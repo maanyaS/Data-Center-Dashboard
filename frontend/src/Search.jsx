@@ -30,7 +30,7 @@ export default function Search({ projects, onProject, onPlace }) {
   return (
     <form onSubmit={submit} className="relative">
       <input value={q} onChange={(e) => { setQ(e.target.value); setPlaces([]); }}
-        placeholder="Search a project, address, town, or lat, lon…"
+        placeholder="Search a project, address, town, or lat, lon…" aria-label="Search a project, address, town, or coordinates"
         className="w-full rounded-md border px-3 py-2 text-sm" />
       {(matches.length > 0 || places.length > 0 || searching || (q.length > 1 && !coords)) && (
         <div className="absolute z-10 mt-1 w-full rounded-md border bg-white text-sm shadow-lg">
@@ -43,9 +43,9 @@ export default function Search({ projects, onProject, onPlace }) {
           ))}
           {places.map((p) => (
             <button type="button" key={p.label} onClick={() => pick(() => onPlace(p))}
-              className="block w-full px-3 py-2 text-left text-slate-600 hover:bg-slate-50">🖈 {p.label}</button>
+              className="block w-full px-3 py-2 text-left text-slate-600 hover:bg-slate-50"><span aria-hidden="true">🖈</span> {p.label}</button>
           ))}
-          <div className="px-3 py-1.5 text-xs text-slate-400">
+          <div className="px-3 py-1.5 text-xs text-slate-400" role="status">
             {searching ? "Searching places…" : "Press Enter to search addresses and towns"}
           </div>
         </div>

@@ -8,6 +8,9 @@ const RISK = {
 };
 const BUFFER = { site: "At site", "1km": "Within 1 km", "5km": "Within 5 km", none: "None within 5 km", unknown: "Unknown" };
 const num = (n) => n.toLocaleString();
+// "None within 5 km", or with a wider search: "10–25 km away" / "None within 50 km"
+const bufferLabel = (f) => f.far ? `${f.far.min_km}–${f.far.max_km} km away`
+  : f.none_within_km ? `None within ${f.none_within_km} km` : BUFFER[f.buffer];
 const fmtM = (m) => (m >= 1000 ? `${(m / 1000).toFixed(1)} km` : `${m} m`);
 const PROTECTED = ["protected_areas", "nj_open_space", "critical_habitat"];
 
@@ -49,14 +52,14 @@ export default function Results({ result, selectedId, onSelect }) {
 
       <Section title="Findings">
         {findings.map((f) => (
-          <button key={f.id} onClick={() => onSelect(f.id)}
+          <button key={f.id} onClick={() => onSelect(f.id)} aria-pressed={f.id === selectedId}
             className={`w-full rounded-md border p-3 text-left text-sm ${f.id === selectedId ? "ring-2 ring-emerald-500" : ""} ${f.buffer === "unknown" ? "border-dashed bg-slate-50 text-slate-500 italic" : ""}`}>
             <div className="flex items-center justify-between gap-2">
               <span className="flex items-center gap-2 font-medium not-italic">
                 <span className="inline-block h-3 w-3 rounded-sm" style={{ background: f.color }} />
                 <span className="font-mono text-xs text-slate-500">{f.id}</span> {f.title}
               </span>
-              <span className="text-xs whitespace-nowrap">{f.population ? "Estimate" : BUFFER[f.buffer]}</span>
+              <span className="text-xs whitespace-nowrap">{f.population ? "Estimate" : bufferLabel(f)}</span>
             </div>
             {f.population && (
               <div className="mt-2 grid grid-cols-2 gap-2">
@@ -91,7 +94,7 @@ export default function Results({ result, selectedId, onSelect }) {
 
       {!briefs ? (
         <Section title="Brief">
-          <p className="animate-pulse text-sm text-slate-500">Writing the brief…</p>
+          <p role="status" className="animate-pulse text-sm text-slate-500">Writing the brief…</p>
         </Section>
       ) : briefs.error ? (
         <Section title="Brief">
@@ -133,7 +136,7 @@ function Briefs({ briefs, onSelect }) {
   // [F1] tags are clickable (highlight the finding); other tags are small and grey
   const cite = (b) => b.split(/(\[(?:F\d+|R\d+|EST|ALT\d+|ACT\d+)\])/).map((p, i) => /^\[F\d+\]$/.test(p)
     ? <button key={i} onClick={() => onSelect(p.slice(1, -1))} className="font-mono text-xs text-emerald-700 underline">{p}</button>
-    : /^\[/.test(p) ? <span key={i} className="font-mono text-[10px] text-slate-400">{p}</span> : p);
+    : /^\[/.test(p) ? <span key={i} className="font-mono text-xs text-slate-400">{p}</span> : p);
 
   return (
     <Section title="Brief">
@@ -148,7 +151,7 @@ function Briefs({ briefs, onSelect }) {
       <div className="flex gap-2 text-sm">
         <button onClick={() => navigator.clipboard.writeText(text)} className="rounded-md border px-3 py-1">Copy</button>
         <button onClick={download} className="rounded-md border px-3 py-1">Download</button>
-        <button onClick={listen} className="rounded-md border px-3 py-1">▷ Listen</button>
+        <button onClick={listen} className="rounded-md border px-3 py-1" aria-label="Listen to the brief"><span aria-hidden="true">▷</span> Listen</button>
       </div>
       {audio && <audio src={audio} controls autoPlay className="w-full" />}
       {voiceErr && <p className="text-xs text-slate-500">{voiceErr}</p>}

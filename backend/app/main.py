@@ -69,22 +69,24 @@ class ScreenRequest(BaseModel):
     mw: float = Field(gt=0, le=10000)
     name: str = Field("", max_length=200)
     population: bool = False   # opt-in: downloads Census tracts around the site
+    radius_km: float = Field(5, ge=5, le=100)   # wider search: how far away the nearest feature is
 
 
-def run_screen(lat, lon, mw, name="", population=False):
-    state, county, findings = spatial.screen_point(lat, lon, ("census_tracts",) if population else ())
+def run_screen(lat, lon, mw, name="", population=False, radius_km=5):
+    state, county, findings = spatial.screen_point(lat, lon, ("census_tracts",) if population else (), radius_km)
     if state is None:
         raise HTTPException(400, "Site is outside US coverage.")
     egrid = (spatial.region_props("egrid_subregions", lat, lon) or {}).get("Subregion")
     est = estimates.estimate(mw, state, egrid)
     triggers = rules.evaluate(findings, state, mw, est)
     result = {
-        "site": {"name": name, "lat": lat, "lon": lon, "mw": mw, "state": state, "county": county},
+        "site": {"name": name, "lat": lat, "lon": lon, "mw": mw, "state": state, "county": county,
+                 "radius_km": radius_km},
         "findings": findings,
         "triggers": triggers,
         "estimates": est,
         "briefs": None,   # written separately (POST /briefs/{id}) so results show without waiting for the AI
-        "rings": spatial.ring_geojson(lat, lon),
+        "rings": spatial.ring_geojson(lat, lon, radius_km),
     }
     result["screening_id"] = db.save_screening(name, lat, lon, mw, result)
     return result
@@ -111,7 +113,7 @@ def write_briefs(screening_id: int, request: Request):
 @app.post("/screen")
 def screen(req: ScreenRequest, request: Request):
     rate_limit(request)
-    return run_screen(req.lat, req.lon, req.mw, req.name, req.population)
+    return run_screen(req.lat, req.lon, req.mw, req.name, req.population, req.radius_km)
 
 
 @app.get("/projects")
@@ -190,12 +192,13 @@ class AltRequest(BaseModel):
     lat: float = Field(ge=-90, le=90)
     lon: float = Field(ge=-180, le=180)
     mw: float = Field(gt=0, le=10000)
+    radius_km: float = Field(5, ge=5, le=100)   # > 5: also test spots out to this distance (slower)
 
 
 @app.post("/alternatives")
 def find_alternatives(req: AltRequest, request: Request):
     rate_limit(request)
-    out = alternatives.find_alternatives(req.lat, req.lon, req.mw)
+    out = alternatives.find_alternatives(req.lat, req.lon, req.mw, radius_km=req.radius_km)
     if out is None:
         raise HTTPException(400, "Site is outside US coverage.")
     return out

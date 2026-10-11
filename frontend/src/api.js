@@ -11,10 +11,11 @@ async function call(path, options) {
 const post = (path, body) =>
   call(path, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
 
-export const screenSite = (lat, lon, mw, name, population) =>
-  post("/screen", { lat, lon, mw, name, population }).then((r) => r.json());
+export const screenSite = (lat, lon, mw, name, population, radius_km = 5) =>
+  post("/screen", { lat, lon, mw, name, population, radius_km }).then((r) => r.json());
 export const fetchBriefs = (screeningId) => post(`/briefs/${screeningId}`, {}).then((r) => r.json());
-export const findAlternatives = (lat, lon, mw) => post("/alternatives", { lat, lon, mw }).then((r) => r.json());
+export const findAlternatives = (lat, lon, mw, radius_km = 5) =>
+  post("/alternatives", { lat, lon, mw, radius_km }).then((r) => r.json());
 export const getProjects = () => call("/projects").then((r) => r.json());
 export const getOverlay = (name) => call(`/overlay/${name}`).then((r) => r.json());
 export const getTracts = (bbox, signal) => call(`/overlay/population/tracts?bbox=${bbox}`, { signal }).then((r) => r.json());

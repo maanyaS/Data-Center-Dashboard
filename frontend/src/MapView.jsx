@@ -2,11 +2,20 @@ import { useEffect, useRef, useState } from "react";
 import * as maplibregl from "maplibre-gl";
 import { getOverlay, getTracts } from "./api";
 
-// Basemap: Geoapify if VITE_GEOAPIFY_KEY is set (frontend/.env), else free CARTO Positron
+// Basemap per theme: Geoapify if VITE_GEOAPIFY_KEY is set (frontend/.env), else free CARTO Positron / Dark Matter
 const GEOAPIFY_KEY = import.meta.env.VITE_GEOAPIFY_KEY;
-const STYLE = GEOAPIFY_KEY
-  ? `https://maps.geoapify.com/v1/styles/positron/style.json?apiKey=${GEOAPIFY_KEY}`
-  : "https://basemaps.cartocdn.com/gl/positron-gl-style/style.json";
+const STYLES = GEOAPIFY_KEY
+  ? { light: `https://maps.geoapify.com/v1/styles/positron/style.json?apiKey=${GEOAPIFY_KEY}`,
+      dark: `https://maps.geoapify.com/v1/styles/dark-matter/style.json?apiKey=${GEOAPIFY_KEY}` }
+  : { light: "https://basemaps.cartocdn.com/gl/positron-gl-style/style.json",
+      dark: "https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json" };
+// Palette colors used on the map (pin + distance rings) per theme
+const THEME = {
+  light: { pin: "#69092D", ring: "#002244", label: "#002244", halo: "#F9FAFA" },
+  dark: { pin: "#FFAB6E", ring: "#F9FAFA", label: "#F9FAFA", halo: "#002244" },
+};
+// Our own map sources; kept when the basemap is swapped for the other theme
+const OWN = new Set(["overlay", "population", "population-detail", "wildlife", "rings", "findings", "projects"]);
 const EMPTY = { type: "FeatureCollection", features: [] };
 
 // Map overlays (same 0-4 level scale, low -> high)
@@ -71,12 +80,13 @@ const projectsGeojson = (projects) => ({
   })),
 });
 
-export default function MapView({ pin, projects, onPick, onProject, result, selectedId, onSelect, alts }) {
+export default function MapView({ pin, projects, onPick, onProject, result, selectedId, onSelect, alts, theme = "light" }) {
   const box = useRef(null);
   const map = useRef(null);
   const marker = useRef(null);
   const altMarkers = useRef([]);
   const handlers = useRef({});
+  const styleTheme = useRef(theme);
   const [overlay, setOverlay] = useState(""); // "", "water_stress", "climate_risk"
   const [wildlife, setWildlife] = useState(false);
   const [population, setPopulation] = useState(false);
@@ -99,12 +109,14 @@ export default function MapView({ pin, projects, onPick, onProject, result, sele
 
   // Create the map once
   useEffect(() => {
-    const m = new maplibregl.Map({ container: box.current, style: STYLE, center: [-96, 38.5], zoom: 3.6 });
+    const T = THEME[theme];
+    const m = new maplibregl.Map({ container: box.current, style: STYLES[theme], center: [-96, 38.5], zoom: 3.6 });
     map.current = m;
     // The pin can be dragged to a new spot
     const pinEl = document.createElement("div");
     pinEl.textContent = "🖈";
-    pinEl.style.cssText = "font-size:30px;line-height:1;cursor:grab;color:#059669;text-shadow:0 1px 2px rgba(0,0,0,.4)";
+    pinEl.setAttribute("aria-label", "Your pin. Drag to move it.");
+    pinEl.style.cssText = `font-size:30px;line-height:1;cursor:grab;color:${T.pin};text-shadow:0 1px 2px rgba(0,0,0,.4)`;
     marker.current = new maplibregl.Marker({ element: pinEl, anchor: "bottom", draggable: true });
     marker.current.on("dragend", () => {
       const p = marker.current.getLngLat();
@@ -128,13 +140,13 @@ export default function MapView({ pin, projects, onPick, onProject, result, sele
         paint: { "fill-color": "#16a34a", "fill-opacity": 0.3, "fill-outline-color": "#15803d" } });
       m.addSource("rings", { type: "geojson", data: EMPTY });
       m.addLayer({ id: "rings", type: "line", source: "rings",
-        paint: { "line-color": "#334155", "line-dasharray": [2, 2], "line-width": 1.5 } });
+        paint: { "line-color": T.ring, "line-dasharray": [2, 2], "line-width": 1.5 } });
       // Distance labels along each ring
       m.addLayer({ id: "ring-labels", type: "symbol", source: "rings",
         layout: { "symbol-placement": "line", "symbol-spacing": 250, "text-size": 12,
           "text-font": ["Open Sans Bold"],
-          "text-field": ["match", ["get", "ring"], "site", "200 m", "1km", "1 km", "5km", "5 km", ""] },
-        paint: { "text-color": "#1e293b", "text-halo-color": "#ffffff", "text-halo-width": 2 } });
+          "text-field": ["coalesce", ["get", "label"], ["match", ["get", "ring"], "site", "200 m", "1km", "1 km", "5km", "5 km", ""]] },
+        paint: { "text-color": T.label, "text-halo-color": T.halo, "text-halo-width": 2 } });
       m.addSource("findings", { type: "geojson", data: EMPTY });
       m.addLayer({ id: "findings-fill", type: "fill", source: "findings",
         filter: ["==", ["geometry-type"], "Polygon"],
@@ -192,6 +204,24 @@ export default function MapView({ pin, projects, onPick, onProject, result, sele
     return () => m.remove();
   }, []);
 
+  // Theme switch: swap the basemap, keep our layers and data, recolor pin + rings
+  useEffect(() => {
+    const m = map.current;
+    if (!m || styleTheme.current === theme) return;
+    styleTheme.current = theme;
+    const T = THEME[theme];
+    marker.current.getElement().style.color = T.pin;
+    m.setStyle(STYLES[theme], {
+      transformStyle: (prev, next) => !prev ? next : ({
+        ...next,
+        sources: { ...next.sources, ...Object.fromEntries(Object.entries(prev.sources).filter(([id]) => OWN.has(id))) },
+        layers: [...next.layers, ...prev.layers.filter((l) => OWN.has(l.source)).map((l) =>
+          l.id === "rings" ? { ...l, paint: { ...l.paint, "line-color": T.ring } }
+            : l.id === "ring-labels" ? { ...l, paint: { ...l.paint, "text-color": T.label, "text-halo-color": T.halo } } : l)],
+      }),
+    });
+  }, [theme]);
+
   // Pin marker
   useEffect(() => {
     if (!pin) return;
@@ -245,12 +275,13 @@ export default function MapView({ pin, projects, onPick, onProject, result, sele
   const legend = (result?.findings || []).filter((f) => f.geometry);
   return (
     <>
-      <div ref={box} style={{ position: "absolute", inset: 0 }}
+      <div ref={box} style={{ position: "absolute", inset: 0 }} role="region"
+        aria-label="Map. Click to place a pin, or use the search box. Arrow keys pan, plus and minus zoom."
         onDragOver={(e) => e.preventDefault()} onDrop={onDrop} />
       <div className="absolute top-3 left-3 rounded-md bg-white/95 px-3 py-2 text-xs shadow">
         <div className="flex items-center gap-2"><Dot c="#7c3aed" /> Known project (FracTracker / NJ list)</div>
         <div className="flex items-center gap-2"><Dot c="#f97316" /> NYISO queue (approx. county location)</div>
-        <div className="flex items-center gap-2"><span className="text-emerald-600">🖈</span> Your pin (drag to move)</div>
+        <div className="flex items-center gap-2"><span className="text-emerald-600" aria-hidden="true">🖈</span> Your pin (drag to move)</div>
         <div draggable onDragStart={(e) => e.dataTransfer.setData("text/plain", "pin")}
           title="Drag onto the map to place a pin"
           className="mt-2 cursor-grab rounded-md border border-emerald-300 bg-emerald-50 px-2 py-1 text-center font-medium text-emerald-700 active:cursor-grabbing">

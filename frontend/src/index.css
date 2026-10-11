@@ -1,8 +1,110 @@
 @import "tailwindcss";
 
+/* ---------- Palette (MP045): Ice Shard #F9FAFA, Distant Wind Chime #EAEFF2, Polar Fog #DEE7ED,
+   Rhapsody in Blue #002244, Royal Seal #69092D, Melonade #FFAB6E ----------
+   The app's Tailwind color names are remapped here, so every screen switches theme from this one file.
+   "emerald" = primary (Royal Seal / Melonade), "sky" = secondary (Rhapsody in Blue).
+   Text colors are picked for WCAG AA contrast (4.5:1 or more) on their backgrounds. */
+@theme {
+  --color-white: #F9FAFA;
+  --color-slate-50: #EAEFF2;
+  --color-slate-100: #DEE7ED;
+  --color-slate-200: #C3D0DC;
+  --color-slate-300: #9FB1C2;
+  --color-slate-400: #4E6379;
+  --color-slate-500: #3D5470;
+  --color-slate-600: #2A4360;
+  --color-slate-800: #002244;
+
+  --color-emerald-50: #F7EAEF;
+  --color-emerald-200: #E3BCCB;
+  --color-emerald-300: #D49AB0;
+  --color-emerald-500: #8A1A44;
+  --color-emerald-600: #69092D;
+  --color-emerald-700: #55071F;
+  --color-emerald-800: #45061A;
+
+  --color-sky-50: #E6EDF5;
+  --color-sky-200: #B9CADC;
+  --color-sky-300: #93ADC8;
+  --color-sky-500: #2B4F78;
+  --color-sky-600: #0D3560;
+  --color-sky-700: #002244;
+  --color-sky-800: #002244;
+  --color-sky-900: #001A33;
+
+  --color-amber-50: #FFF4EC;
+  --color-amber-100: #FFE3CC;
+  --color-amber-200: #FFCFA8;
+  --color-amber-600: #8F4309;
+  --color-amber-700: #7A3A08;
+}
+
+/* Dark theme: navy surfaces, light text, Melonade as the primary color */
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --color-white: #001A33;
+  --color-slate-50: #002244;
+  --color-slate-100: #0D3157;
+  --color-slate-200: #24486F;
+  --color-slate-300: #B8C7D6;
+  --color-slate-400: #A9BACB;
+  --color-slate-500: #C3D0DC;
+  --color-slate-600: #D6E0E8;
+  --color-slate-800: #F9FAFA;
+
+  --color-emerald-50: #3A0F22;
+  --color-emerald-200: #7A2A45;
+  --color-emerald-300: #B8704A;
+  --color-emerald-500: #FFAB6E;
+  --color-emerald-600: #FFAB6E;
+  --color-emerald-700: #FFC394;
+  --color-emerald-800: #FFD9BB;
+
+  --color-sky-50: #0D3157;
+  --color-sky-200: #2B4F78;
+  --color-sky-300: #3D6590;
+  --color-sky-500: #8FB3D9;
+  --color-sky-600: #8FB3D9;
+  --color-sky-700: #B5CDE6;
+  --color-sky-800: #CFE0F1;
+  --color-sky-900: #E3EEF8;
+
+  --color-amber-50: #3A2A1A;
+  --color-amber-100: #4A3016;
+  --color-amber-200: #7A4F25;
+  --color-amber-600: #FFAB6E;
+  --color-amber-700: #FFC394;
+
+  --color-red-50: #3D0D1C;
+  --color-red-100: #5A1028;
+  --color-red-200: #7A1E38;
+  --color-red-600: #FF9AA8;
+  --color-red-700: #FFB3BE;
+
+  --color-violet-50: #2A1A3D;
+  --color-violet-200: #4A3570;
+  --color-violet-600: #C4A8FF;
+  --color-violet-700: #D5C2FF;
+  --color-violet-900: #EDE4FF;
+}
+
 html, body, #root { height: 100%; }
+body { background: var(--color-slate-50); color: var(--color-slate-800); }
 
 /* Tailwind 4 defaults borders to the text color; use a light gray instead */
 @layer base {
   *, ::before, ::after { border-color: var(--color-slate-200); }
 }
+
+/* ---------- Accessibility ---------- */
+/* Clear keyboard focus ring on everything (WCAG 2.4.7) */
+:focus-visible { outline: 3px solid var(--color-emerald-500); outline-offset: 2px; border-radius: 4px; }
+/* Respect "reduce motion" (WCAG 2.3.3) */
+@media (prefers-reduced-motion: reduce) {
+  *, ::before, ::after { animation: none !important; transition: none !important; scroll-behavior: auto !important; }
+}
+
+/* Map popups follow the theme */
+.maplibregl-popup-content { background: var(--color-white); color: var(--color-slate-800); }
+.maplibregl-popup-tip { border-top-color: var(--color-white) !important; border-bottom-color: var(--color-white) !important; }

@@ -208,11 +208,11 @@ def ensure_region():
         download(layer, REGION_BBOX, simplify_deg=0.003)   # ~300 m, national layers
 
 
-def ensure_area(lat, lon, state=None, optional=()):
+def ensure_area(lat, lon, state=None, optional=(), km=FETCH_RADIUS_KM):
     """Make sure the site-scope layers for this state are cached around the point. Returns {layer: error}.
     Optional layers (e.g. population) are only downloaded if listed in `optional`.
     Missing layers are downloaded in parallel (network), then saved one at a time (database)."""
-    bbox = bbox_around(lat, lon, FETCH_RADIUS_KM)
+    bbox = bbox_around(lat, lon, km)
     covered = {r["layer"] for r in db.rows(   # one query instead of one per layer
         "SELECT DISTINCT layer FROM coverage WHERE minx<=? AND miny<=? AND maxx>=? AND maxy>=?", bbox)}
     todo = [l for l in db.get_layers("site")
@@ -271,16 +271,65 @@ def applies(layer, state):
     return "*" in layer["states"] or state in layer["states"]
 
 
-def ring_geojson(lat, lon):
+def ring_geojson(lat, lon, radius_km=5):
     center = transform(TO_M, Point(lon, lat))
+    rings = dict(RINGS_M, **({"outer": radius_km * 1000} if radius_km > 5 else {}))
     return {
         "type": "FeatureCollection",
         "features": [
-            {"type": "Feature", "properties": {"ring": name},
-             "geometry": mapping(transform(TO_DEG, center.buffer(m, 32)))}
-            for name, m in RINGS_M.items()
+            {"type": "Feature", "properties": {"ring": name, "label": f"{m / 1000:g} km" if m >= 1000 else f"{m} m"},
+             "geometry": mapping(transform(TO_DEG, center.buffer(m, 64)))}
+            for name, m in rings.items()
         ],
     }
+
+
+# ---------- wider search (beyond 5 km) ----------
+FAR_BANDS_KM = (10, 25, 50, 100)
+_far_cache = {}
+
+
+def count_within(layer, lat, lon, km):
+    """How many features of a layer are within `km` of the point (asks the server; no download)."""
+    key = (layer["name"], round(lat, 3), round(lon, 3), km)
+    if key not in _far_cache:
+        r = requests.get(layer["url"].rstrip("/") + "/query", params={
+            "where": layer["where_clause"], "geometry": f"{lon},{lat}", "geometryType": "esriGeometryPoint",
+            "inSR": 4326, "spatialRel": "esriSpatialRelIntersects", "distance": km,
+            "units": "esriSRUnit_Kilometer", "returnCountOnly": "true", "f": "json"}, timeout=8)
+        r.raise_for_status()
+        data = r.json()
+        if "count" not in data:
+            raise RuntimeError(data.get("error") or "no count")
+        if len(_far_cache) > 5000:
+            _far_cache.clear()
+        _far_cache[key] = data["count"]
+    return _far_cache[key]
+
+
+def nearest_band(layer, lat, lon, radius_km):
+    """Nearest feature beyond 5 km: (min_km, max_km), None if none within radius_km, or "error"."""
+    lo = 5
+    try:
+        for hi in sorted({b for b in FAR_BANDS_KM if b < radius_km} | {radius_km}):
+            if count_within(layer, lat, lon, hi):
+                return lo, hi
+            lo = hi
+    except Exception as e:
+        print(f"[spatial] wider search {layer['name']} failed: {e}")
+        return "error"
+    return None
+
+
+def describe_far(f, layer, band, radius_km):
+    if band == "error":
+        f["detail"] += f" Not checked beyond 5 km (the server did not answer)."
+    elif band:
+        f["far"] = {"min_km": band[0], "max_km": round(band[1])}
+        f["detail"] = f"No {layer['title']} within 5 km; the nearest is {band[0]:g}-{band[1]:g} km away."
+    else:
+        f["none_within_km"] = radius_km
+        f["detail"] = f"No {layer['title']} features found within {radius_km:g} km."
 
 
 def fmt_m(m):
@@ -360,15 +409,16 @@ def population_finding(center_m, rows):
                        f"(2020 Census tract populations, estimated by area share).")}
 
 
-def screen_point(lat, lon, optional=()):
+def screen_point(lat, lon, optional=(), radius_km=5):
     """Check each layer around the point. Returns (state, county, findings).
-    `optional`: optional layers to include, e.g. ("census_tracts",) for population."""
+    `optional`: optional layers to include, e.g. ("census_tracts",) for population.
+    `radius_km` > 5: layers with nothing within 5 km also get a wider search (how far away the nearest one is)."""
     state, county = locate(lat, lon)
     if state is None:
         return None, None, []
     errors = ensure_area(lat, lon, state, optional)
     center = transform(TO_M, Point(lon, lat))
-    findings = []
+    findings, wider = [], []
     for layer in db.get_layers("site"):
         if not applies(layer, state) or (layer["name"] in OPTIONAL_LAYERS and layer["name"] not in optional):
             continue
@@ -391,6 +441,8 @@ def screen_point(lat, lon, optional=()):
         if not hits:
             findings.append({**base, "buffer": "none", "distance_m": None,
                              "detail": f"No {layer['title']} features found within 5 km."})
+            if radius_km > 5:
+                wider.append((findings[-1], layer))
             continue
         hits.sort(key=lambda h: h[0])
         d, label, g = hits[0]
@@ -408,6 +460,10 @@ def screen_point(lat, lon, optional=()):
             "detail": (f"Nearest {layer['title']} feature{f' ({label})' if label else ''} is {where}. "
                        f"{n1} feature(s) within 1 km, {len(hits)} within 5 km."),
         })
+    if wider:   # quick "how many within X km" questions to each server, all layers at once
+        with ThreadPoolExecutor(max_workers=8) as pool:
+            for (f, layer), band in zip(wider, pool.map(lambda w: nearest_band(w[1], lat, lon, radius_km), wider)):
+                describe_far(f, layer, band, radius_km)
     # Context at the pin from region layers (water stress, climate risk)
     pt = Point(lon, lat)
     for layer in db.get_layers("region"):

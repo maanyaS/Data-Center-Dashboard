@@ -13,6 +13,7 @@ so a candidate is a "lower environmental-risk area to look at", not a recommende
 """
 import json
 import math
+from concurrent.futures import ThreadPoolExecutor
 
 from shapely import STRtree
 from shapely.geometry import Point, shape
@@ -21,6 +22,8 @@ from shapely.ops import transform
 from . import db, estimates, rules, spatial
 
 RINGS_KM = (1.0, 1.75, 2.5)
+FAR_SHARES = (0.5, 1.0)        # wider search: extra rings at these shares of the search radius
+FAR_CHECK_KM = 1               # far spots are checked out to 1 km (all the rules need: site + 1 km)
 BEARINGS = ("N", "NE", "E", "SE", "S", "SW", "W", "NW")
 RISK_POINTS = {"high": 3, "medium": 1}
 REGION_CONTEXT = {"water_stress", "climate_risk", "census_tracts"}   # shown separately, not as distances
@@ -44,14 +47,14 @@ def score(triggers):
     return sum(RISK_POINTS.get(t["delay_risk"], 0) for t in triggers)
 
 
-def load_layers(lat, lon, state, checked):
-    """Load each cached site layer around the origin once, in meters, with a spatial index."""
+def load_layers(lat, lon, state, checked, km=spatial.FETCH_RADIUS_KM):
+    """Load each cached site layer around a point once, in meters, with a spatial index."""
     out = {}
     for layer in db.get_layers("site"):
         if not spatial.applies(layer, state) or layer["name"] not in checked:
             continue
         geoms, labels, pops = [], [], []
-        for f in spatial.features_near(layer["name"], lat, lon, spatial.FETCH_RADIUS_KM):
+        for f in spatial.features_near(layer["name"], lat, lon, km):
             geoms.append(transform(spatial.TO_M, shape(json.loads(f["geojson"]))))
             labels.append(f["label"])
             pop = (json.loads(f["props"]) or {}).get("POP100")
@@ -61,7 +64,7 @@ def load_layers(lat, lon, state, checked):
     return out
 
 
-def screen_cached(lat, lon, layers):
+def screen_cached(lat, lon, layers, max_m=5000):
     """Same finding format as spatial.screen_point, but only from data already loaded (no downloads)."""
     center = transform(spatial.TO_M, Point(lon, lat))
     findings, inside = [], []
@@ -84,7 +87,7 @@ def screen_cached(lat, lon, layers):
             findings.append({**base, "buffer": "none", "distance_m": None,
                              "detail": f"No {layer['title']} features found within 5 km."})
             continue
-        idx = L["tree"].query(center, predicate="dwithin", distance=5000)
+        idx = L["tree"].query(center, predicate="dwithin", distance=max_m)
         if len(idx) == 0:
             findings.append({**base, "buffer": "none", "distance_m": None,
                              "detail": f"No {layer['title']} features found within 5 km."})
@@ -125,7 +128,7 @@ def summarize(lat, lon, findings, triggers, origin=None):
     return s
 
 
-def find_alternatives(lat, lon, mw, top=3):
+def find_alternatives(lat, lon, mw, top=3, radius_km=5):
     # 1. Origin, screened normally (also makes sure the area is cached)
     state, county, findings = spatial.screen_point(lat, lon)
     if state is None:
@@ -140,22 +143,62 @@ def find_alternatives(lat, lon, mw, top=3):
 
     # 2-4. Candidates
     layers = load_layers(lat, lon, state, checked)
-    candidates, skipped = [], 0
+
+    def score_spot(clat, clon, km, name, cf, inside):
+        if set(inside) & NO_BUILD_LAYERS:
+            return None
+        c = summarize(clat, clon, cf, rules.evaluate(cf, state, mw, est))
+        c["label"] = f"{km:g} km {name}"
+        c["distance_km"] = km
+        return c
+
+    # Near spots (within 2.5 km): scored from the origin's cached data
+    tests = []
     for km in RINGS_KM:
         for k, name in enumerate(BEARINGS):
             clat, clon = offset(lat, lon, km, k * 45)
             if spatial.locate(clat, clon)[0] != state:   # stay in the same state (same rules)
-                skipped += 1
+                tests.append(None)
                 continue
-            cf, inside = screen_cached(clat, clon, layers)
-            if set(inside) & NO_BUILD_LAYERS:
-                skipped += 1
+            tests.append(score_spot(clat, clon, km, name, *screen_cached(clat, clon, layers)))
+
+    # Far spots (wider search): ask each map server "anything within 1 km / 200 m?" - no downloads
+    if radius_km > 5:
+        far_layers = [L["layer"] for n, L in layers.items() if n != spatial.POPULATION_LAYER]
+        # One quick test per server first; a server that doesn't answer is left out (listed as not checked)
+        with ThreadPoolExecutor(max_workers=16) as pool:
+            ok = list(pool.map(lambda l: _safe(spatial.count_within, l, lat, lon, 1) is not None, far_layers))
+        down = [l["title"] for l, good in zip(far_layers, ok) if not good]
+        far_layers = [l for l, good in zip(far_layers, ok) if good]
+        if down:
+            unchecked = sorted(set(unchecked) | {f"{t} (far spots)" for t in down})
+        spots = []
+        for s in FAR_SHARES:
+            for k, name in enumerate(BEARINGS):
+                km = round(radius_km * s, 1)
+                clat, clon = offset(lat, lon, km, k * 45)
+                if spatial.locate(clat, clon)[0] == state:
+                    spots.append((clat, clon, km, name))
+                else:
+                    tests.append(None)
+        jobs = [(s, l) for s in spots for l in far_layers]
+        with ThreadPoolExecutor(max_workers=16) as pool:
+            status = dict(zip(((s[:2], l["name"]) for s, l in jobs),
+                              pool.map(lambda j: _safe(layer_status, j[1], *j[0][:2]), jobs)))
+        for clat, clon, km, name in spots:
+            res = [(l, status[((clat, clon), l["name"])]) for l in far_layers]
+            if any(r is None for _, r in res):   # a server didn't answer: don't guess
+                tests.append(None)
                 continue
-            ct = rules.evaluate(cf, state, mw, est)
-            c = summarize(clat, clon, cf, ct)
-            c["label"] = f"{km:g} km {name}"
-            c["distance_km"] = km
-            candidates.append(c)
+            cf = [{"id": f"F{i + 1}", "layer": l["name"], "title": l["title"], "color": l["color"],
+                   "source": l["url"], "geometry": None, "buffer": b, "distance_m": d, "detail": ""}
+                  for i, (l, (b, d, _)) in enumerate(res)]
+            c = score_spot(clat, clon, km, name, cf, [l["name"] for l, r in res if r[2]])
+            if c:
+                c["checked_km"] = FAR_CHECK_KM
+            tests.append(c)
+    candidates = [c for c in tests if c]
+    skipped = len(tests) - len(candidates)
 
     candidates.sort(key=lambda c: (c["score"], c["high"], c["distance_km"]))
     best = [c for c in candidates if c["score"] < origin["score"]][:top]
@@ -163,9 +206,28 @@ def find_alternatives(lat, lon, mw, top=3):
         msg = (f"Found {len(best)} nearby spot(s) with fewer flagged review triggers than the original site "
                f"(score {origin['score']} -> {best[0]['score']}).")
     else:
-        msg = "No nearby spot within 2.5 km scored lower than the original site on the layers checked."
+        msg = (f"No nearby spot within {max(radius_km, 2.5):g} km scored lower than the original site "
+               "on the layers checked.")
     return {
         "origin": origin, "candidates": best, "tested": len(candidates), "skipped": skipped,
         "message": msg, "caveat": CAVEAT, "unchecked_layers": unchecked,
         "scoring": "Score = 3 per high-delay trigger + 1 per medium. Lower is better. Same rules.yaml as the main screen.",
     }
+
+
+def _safe(fn, *args):
+    try:
+        return fn(*args)
+    except Exception as e:   # one far spot failing shouldn't stop the search
+        print(f"[alternatives] spot {args} failed: {e}")
+        return None
+
+
+def layer_status(layer, lat, lon):
+    """(buffer, rough distance m, point inside a shape?) from quick count queries - used for far spots."""
+    if not spatial.count_within(layer, lat, lon, 1):
+        return "none", None, False
+    if not spatial.count_within(layer, lat, lon, spatial.SITE_RADIUS_M / 1000):
+        return "1km", 1000, False
+    inside = spatial.count_within(layer, lat, lon, 0.01) > 0
+    return "site", 0 if inside else spatial.SITE_RADIUS_M, inside

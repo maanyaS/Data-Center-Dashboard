@@ -2,7 +2,9 @@ import { useState } from "react";
 import { findAlternatives } from "./api";
 
 // "Find a lower-risk spot nearby" + side-by-side comparison with the original site.
-const fmtM = (m) => (m == null ? "None" : m >= 1000 ? `${(m / 1000).toFixed(1)} km` : `${m} m`);
+const fmtM = (m, c) => c?.checked_km
+  ? (m == null ? `>${c.checked_km} km` : m === 0 ? "inside" : m <= 200 ? "≤200 m" : "≤1 km")
+  : m == null ? "None" : m >= 1000 ? `${(m / 1000).toFixed(1)} km` : `${m} m`;
 const ROWS_FIRST = ["fema_flood", "nj_wetlands", "nwi_wetlands", "ny_wetlands", "de_wetlands",
   "protected_areas", "nj_open_space", "ny_protected", "nj_highlands", "nj_pinelands", "nj_cafra", "critical_habitat"];
 
@@ -25,12 +27,13 @@ export default function Alternatives({ result, onFound, onGo }) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const { site } = result;
+  const radius = site.radius_km || 5;
 
   async function run() {
     setLoading(true);
     setError("");
     try {
-      const d = await findAlternatives(site.lat, site.lon, Number(site.mw) || 100);
+      const d = await findAlternatives(site.lat, site.lon, Number(site.mw) || 100, radius);
       setData(d);
       onFound(d.candidates);
     } catch (e) {
@@ -44,7 +47,9 @@ export default function Alternatives({ result, onFound, onGo }) {
       <div className="mt-6 rounded-lg border border-sky-200 bg-sky-50 p-3 text-sm">
         <div className="font-medium text-sky-900">Is there a lower-risk spot nearby?</div>
         <p className="mt-1 text-xs text-sky-800">
-          Tests 24 points within 2.5 km using the same layers and rules, then compares the best ones to this site.
+          {radius > 5
+            ? `Tests 40 points: 24 within 2.5 km plus 16 at ${radius / 2} and ${radius} km (far spots take ~10-20 s)`
+            : "Tests 24 points within 2.5 km"} using the same layers and rules, then compares the best ones to this site.
         </p>
         <button onClick={run} disabled={loading}
           className="mt-2 w-full rounded-md bg-sky-600 py-1.5 font-medium text-white hover:bg-sky-700 disabled:opacity-40">
@@ -59,7 +64,7 @@ export default function Alternatives({ result, onFound, onGo }) {
   const maxScore = Math.max(1, ...cols.map((c) => c.score));
   const all = Object.keys(data.origin.titles).filter((l) => l in data.origin.nearest);
   // Rows where nothing is within 5 km at ANY spot are collapsed into one line
-  const empty = all.filter((l) => !CLOSER_IS_BETTER.includes(l) && cols.every((c) => c.nearest[l] == null));
+  const empty = all.filter((l) => !CLOSER_IS_BETTER.includes(l) && cols.every((c) => c.nearest[l] == null && !c.checked_km));
   const layers = all.filter((l) => !empty.includes(l))
     .sort((a, b) => (ROWS_FIRST.indexOf(a) + 1 || 99) - (ROWS_FIRST.indexOf(b) + 1 || 99));
 
@@ -91,9 +96,9 @@ export default function Alternatives({ result, onFound, onGo }) {
         <table className="w-full text-xs">
           <thead>
             <tr className="border-b text-left text-slate-500">
-              <th className="py-1 pr-2 font-medium">Nearest…</th>
+              <th scope="col" className="py-1 pr-2 font-medium">Nearest…</th>
               {cols.map((c, i) => (
-                <th key={c.label} className="py-1 pr-2 font-medium">{i === 0 ? "Original" : `#${i}`}</th>
+                <th scope="col" key={c.label} className="py-1 pr-2 font-medium">{i === 0 ? "Original" : `#${i}`}</th>
               ))}
             </tr>
           </thead>
@@ -102,7 +107,7 @@ export default function Alternatives({ result, onFound, onGo }) {
               <tr key={l} className="border-b border-slate-100">
                 <td className="py-1 pr-2 text-slate-600">{data.origin.titles[l]}</td>
                 {cols.map((c) => (
-                  <td key={c.label} className={`py-1 pr-2 tabular-nums ${cellClass(c.nearest[l], l)}`}>{fmtM(c.nearest[l])}</td>
+                  <td key={c.label} className={`py-1 pr-2 tabular-nums ${cellClass(c.nearest[l], l)}`}>{fmtM(c.nearest[l], c)}</td>
                 ))}
               </tr>
             ))}
@@ -152,7 +157,7 @@ export default function Alternatives({ result, onFound, onGo }) {
         </div>
       )}
 
-      <p className="text-[11px] leading-snug text-slate-500">
+      <p className="text-xs leading-snug text-slate-500">
         {data.caveat} {data.scoring}
         {data.unchecked_layers.length > 0 && ` Not checked: ${data.unchecked_layers.join(", ")}.`}
       </p>
