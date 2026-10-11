@@ -5,6 +5,7 @@ and are never returned by any endpoint.
 """
 import math
 import os
+import threading
 import time
 from collections import defaultdict, deque
 
@@ -30,23 +31,36 @@ app.add_middleware(CORSMiddleware, allow_origins=ALLOWED_ORIGINS,
 
 # Simple per-visitor rate limit for the expensive endpoints (Gemini, downloads, ElevenLabs)
 RATE_LIMIT = int(os.getenv("RATE_LIMIT_PER_MIN", "10"))
+LIMITS = {"screen": RATE_LIMIT, "briefs": RATE_LIMIT, "voice": RATE_LIMIT, "overlay": 60}
 _hits = defaultdict(deque)
 
 
-def rate_limit(request: Request):
-    ip = (request.headers.get("x-forwarded-for") or request.client.host or "?").split(",")[0].strip()
-    now, q = time.time(), _hits[ip]
+def client_ip(request: Request):
+    # Behind Render's proxy the real client is the LAST X-Forwarded-For entry
+    # (earlier entries are whatever the client sent, so they can be faked).
+    fwd = request.headers.get("x-forwarded-for") if ON_SERVER else None
+    return fwd.split(",")[-1].strip() if fwd else (request.client.host if request.client else "?")
+
+
+def rate_limit(request: Request, bucket="screen"):
+    now, key = time.time(), (bucket, client_ip(request))
+    q = _hits[key]
     while q and now - q[0] > 60:
         q.popleft()
-    if len(q) >= RATE_LIMIT:
+    if len(q) >= LIMITS[bucket]:
         raise HTTPException(429, "Too many requests - please wait a minute and try again.")
     q.append(now)
+    if len(_hits) > 10000:   # forget idle visitors so memory doesn't grow forever
+        for k in [k for k, v in _hits.items() if not v or now - v[-1] > 60]:
+            del _hits[k]
 
 
 @app.on_event("startup")
 def startup():
     db.init_db()
     spatial.ensure_region()   # counties (downloads once, then cached)
+    # Build the whole-US overlays in the background so the first map click is instant
+    threading.Thread(target=lambda: [spatial.national_overlay(n) for n in NATIONAL.values()], daemon=True).start()
 
 
 class ScreenRequest(BaseModel):
@@ -69,11 +83,23 @@ def run_screen(lat, lon, mw, name="", population=False):
         "findings": findings,
         "triggers": triggers,
         "estimates": est,
-        "briefs": briefs.write_briefs(findings, triggers, est),
+        "briefs": None,   # written separately (POST /briefs/{id}) so results show without waiting for the AI
         "rings": spatial.ring_geojson(lat, lon),
     }
-    db.save_screening(name, lat, lon, mw, result)
+    result["screening_id"] = db.save_screening(name, lat, lon, mw, result)
     return result
+
+
+@app.post("/briefs/{screening_id}")
+def write_briefs(screening_id: int, request: Request):
+    rate_limit(request, "briefs")
+    result = db.get_screening(screening_id)
+    if result is None:
+        raise HTTPException(404, "Screening not found")
+    if not result.get("briefs"):
+        result["briefs"] = briefs.write_briefs(result["findings"], result["triggers"], result["estimates"])
+        db.update_screening(screening_id, result)
+    return result["briefs"]
 
 
 @app.post("/screen")
@@ -104,19 +130,30 @@ def layers():
     return db.get_layers("site")
 
 
-@app.get("/overlay/{name}")
-def overlay(name: str, bbox: str = "-180,17,-64,72"):
-    """bbox = minLon,minLat,maxLon,maxLat of the current map view."""
+@app.get("/overlay/population/tracts")
+def population_tracts(request: Request, bbox: str):
+    """bbox = minLon,minLat,maxLon,maxLat of the current map view (at most 1 degree across)."""
     try:
         box = [float(x) for x in bbox.split(",")]
         assert len(box) == 4 and all(math.isfinite(v) for v in box)
     except (ValueError, AssertionError):
         raise HTTPException(400, "bbox must be minLon,minLat,maxLon,maxLat")
-    if name == "population":   # census tracts, downloaded for the view on demand
-        return spatial.population_overlay(box)
-    if name not in ("water_stress", "climate_risk", "wildlife_areas"):
+    # Zoomed-in detail: Census tracts for the current view (downloaded from the Census on demand)
+    rate_limit(request, "overlay")
+    return spatial.population_overlay(box)
+
+
+NATIONAL = {"population": "county_population", "water_stress": "water_stress",
+            "climate_risk": "climate_risk", "wildlife_areas": "wildlife_areas"}
+
+
+@app.get("/overlay/{name}")
+def overlay(name: str):
+    """Whole-US overlay (loaded once by the map; the browser may cache it for a day)."""
+    if name not in NATIONAL:
         raise HTTPException(404, "Unknown overlay")
-    return spatial.overlay_geojson(name, box)
+    return Response(spatial.national_overlay(NATIONAL[name]), media_type="application/json",
+                    headers={"Content-Encoding": "gzip", "Cache-Control": "public, max-age=86400"})
 
 
 @app.get("/alerts")
@@ -130,7 +167,7 @@ class VoiceRequest(BaseModel):
 
 @app.post("/voice")
 def speak(req: VoiceRequest, request: Request):
-    rate_limit(request)
+    rate_limit(request, "voice")
     audio = voice.tts(req.text)
     if audio is None:
         raise HTTPException(404, "ElevenLabs not configured (set ELEVENLABS_API_KEY).")

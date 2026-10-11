@@ -1,10 +1,12 @@
 import { useEffect, useState } from "react";
-import { getProjects, screenSite } from "./api";
+import { fetchBriefs, getProjects, screenSite } from "./api";
 import MapView from "./MapView";
 import Results from "./Results";
 import Alerts from "./Alerts";
 import Search from "./Search";
 import Alternatives from "./Alternatives";
+import ErrorBoundary from "./ErrorBoundary";
+import Fps from "./Fps";
 
 export default function App() {
   const [tab, setTab] = useState("screen"); // "screen" | "alerts"
@@ -54,7 +56,9 @@ export default function App() {
     setSelectedId(null);
     setAlts(null);
     try {
-      setResult(await screenSite(pin.lat, pin.lon, Number(mw), name, withPopulation));
+      const r = await screenSite(pin.lat, pin.lon, Number(mw), name, withPopulation);
+      setResult(r);
+      loadBriefs(r);   // results show now; the AI briefs fill in when ready
     } catch (e) {
       setError(e.message);
       setResult(null);
@@ -62,10 +66,20 @@ export default function App() {
     setLoading(false);
   }
 
+  // Briefs are written after the results appear (Gemini can take several seconds)
+  function loadBriefs(r) {
+    if (!r || r.briefs || !r.screening_id) return;
+    const same = (cur) => cur && cur.screening_id === r.screening_id;
+    fetchBriefs(r.screening_id)
+      .then((b) => setResult((cur) => (same(cur) ? { ...cur, briefs: b } : cur)))
+      .catch(() => setResult((cur) => (same(cur) ? { ...cur, briefs: { error: true } } : cur)));
+  }
+
   function openAlert(a) {
     openProject({ name: a.name, lat: a.lat, lon: a.lon, mw: a.mw, county: a.county, state: "NY",
       source: "nyiso", approximate: 1, notes: a.summary });
     setResult(a.result);
+    loadBriefs(a.result);
   }
 
   return (
@@ -88,7 +102,7 @@ export default function App() {
       <main className="flex min-h-0 flex-1">
         <aside className="w-[440px] shrink-0 overflow-y-auto border-r bg-white p-5">
           {tab === "alerts" ? (
-            <Alerts onOpen={openAlert} />
+            <ErrorBoundary><Alerts onOpen={openAlert} /></ErrorBoundary>
           ) : (
             <>
               <div className="space-y-3">
@@ -129,20 +143,27 @@ export default function App() {
                 )}
                 {error && <p className="rounded-md bg-red-50 p-2 text-sm text-red-700">{error}</p>}
               </div>
-              {result && <Results result={result} selectedId={selectedId} onSelect={setSelectedId} />}
-              {result && <Alternatives key={`${result.site.lat},${result.site.lon},${result.site.mw}`} result={result}
-                onFound={setAlts} onGo={(c) => dropPin({ lat: c.lat, lon: c.lon })} />}
+              {result && (
+                <ErrorBoundary>
+                  <Results result={result} selectedId={selectedId} onSelect={setSelectedId} />
+                  <Alternatives key={`${result.site.lat},${result.site.lon},${result.site.mw}`} result={result}
+                    onFound={setAlts} onGo={(c) => dropPin({ lat: c.lat, lon: c.lon })} />
+                </ErrorBoundary>
+              )}
             </>
           )}
         </aside>
         <section className="relative flex-1">
-          <MapView pin={pin} projects={projects} onPick={(lat, lon) => dropPin({ lat, lon })} onProject={openProject}
-            result={result} selectedId={selectedId} onSelect={setSelectedId} alts={alts} />
+          <ErrorBoundary>
+            <MapView pin={pin} projects={projects} onPick={(lat, lon) => dropPin({ lat, lon })} onProject={openProject}
+              result={result} selectedId={selectedId} onSelect={setSelectedId} alts={alts} />
+          </ErrorBoundary>
         </section>
       </main>
 
-      <footer className="border-t bg-white px-5 py-1.5 text-xs text-slate-500">
-        Screening-level only, from public GIS data. Not a site survey. Does not predict permit outcomes.
+      <footer className="flex justify-between gap-4 border-t bg-white px-5 py-1.5 text-xs text-slate-500">
+        <span>Screening-level only, from public GIS data. Not a site survey. Does not predict permit outcomes.</span>
+        <Fps />
       </footer>
     </div>
   );

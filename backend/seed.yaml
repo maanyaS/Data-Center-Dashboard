@@ -159,6 +159,16 @@ layers:
   - '*'
   scope: site
   color: '#be123c'
+- name: county_population
+  title: Population by county (2020 Census)
+  url: https://tigerweb.geo.census.gov/arcgis/rest/services/TIGERweb/tigerWMS_Census2020/MapServer/82
+  where: 1=1
+  label_field: NAME
+  out_fields: NAME,STATE,POP100,AREALAND
+  states:
+  - '*'
+  scope: region
+  color: '#7e22ce'
 - name: water_stress
   title: Baseline water stress (WRI Aqueduct 4.0)
   url: https://services.arcgis.com/P3ePLMYs2RVChkJx/arcgis/rest/services/aqueduct_water_risk/FeatureServer/1

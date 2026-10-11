@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
-import maplibregl from "maplibre-gl";
-import { getOverlay } from "./api";
+import * as maplibregl from "maplibre-gl";
+import { getOverlay, getTracts } from "./api";
 
 // Basemap: Geoapify if VITE_GEOAPIFY_KEY is set (frontend/.env), else free CARTO Positron
 const GEOAPIFY_KEY = import.meta.env.VITE_GEOAPIFY_KEY;
@@ -14,11 +14,12 @@ const LEVEL_COLORS = ["#fef9c3", "#fde68a", "#fb923c", "#ef4444", "#7f1d1d"];
 const OVERLAYS = {
   water_stress: { title: "Water stress (WRI Aqueduct 4.0)", labels: ["Low", "Low-Med", "Med-High", "High", "Extremely high"] },
   climate_risk: { title: "Climate risk (FEMA National Risk Index)", labels: ["Very low", "Rel. low", "Rel. moderate", "Rel. high", "Very high"] },
-  population: { title: "People per km² (2020 Census tracts)", labels: ["Under 100", "100–500", "500–1,500", "1,500–4,000", "4,000+"],
-    note: "Zoom in to see tracts · first load of an area takes a few seconds" },
 };
-// Small, numerous layers only load when zoomed in
-const MIN_ZOOM = { wildlife_areas: 6, population: 11 };
+// Population density has its own purple scale so it can sit on top of water stress / climate risk
+const POP_COLORS = ["#f3e8ff", "#d8b4fe", "#a855f7", "#7e22ce", "#3b0764"];
+const POP_LABELS = ["Under 100", "100–500", "500–1,500", "1,500–4,000", "4,000+"];
+// Census-tract detail for population is added on top once the view is this small (degrees)
+const TRACT_MAX_DEG = 1.0;
 
 // Bounds of any GeoJSON geometry -> [[minLon, minLat], [maxLon, maxLat]]
 function bounds(geometry) {
@@ -33,21 +34,30 @@ function bounds(geometry) {
   return b;
 }
 
-// Load a region layer into a map source, only for the current view.
-// A newer request cancels the older one for the same source, so fast clicking/panning doesn't
-// pile up requests on the server or let an old, slow response overwrite a newer one.
-const inFlight = {};
+// Whole-US overlays: each is downloaded once, kept in memory, and stays on the map while panning/zooming
+const national = {};
+const wanted = {}; // sourceId -> overlay name currently switched on
 function loadOverlay(m, name, sourceId = "overlay") {
   const src = m?.getSource(sourceId);
   if (!src) return;
-  inFlight[sourceId]?.abort();
-  if (!name || m.getZoom() < (MIN_ZOOM[name] || 0)) {
-    src.setData(EMPTY);
-    return;
-  }
-  const ctrl = (inFlight[sourceId] = new AbortController());
+  wanted[sourceId] = name;
+  if (!name) return src.setData(EMPTY);
+  national[name] ??= getOverlay(name).catch((e) => { delete national[name]; throw e; });
+  national[name].then((g) => { if (wanted[sourceId] === name) src.setData(g); }).catch(() => {});
+}
+
+// Zoomed-in population detail (Census tracts for the current view); a newer request cancels the older one
+let tractReq;
+function loadTracts(m, on) {
+  const src = m?.getSource("population-detail");
+  if (!src) return;
+  tractReq?.abort();
   const b = m.getBounds();
-  getOverlay(name, [b.getWest(), b.getSouth(), b.getEast(), b.getNorth()].map((x) => x.toFixed(3)).join(","), ctrl.signal)
+  if (!on || b.getEast() - b.getWest() > TRACT_MAX_DEG || b.getNorth() - b.getSouth() > TRACT_MAX_DEG) {
+    return src.setData(EMPTY);
+  }
+  const ctrl = (tractReq = new AbortController());
+  getTracts([b.getWest(), b.getSouth(), b.getEast(), b.getNorth()].map((x) => x.toFixed(3)).join(","), ctrl.signal)
     .then((g) => { if (!ctrl.signal.aborted) src.setData(g); })
     .catch(() => {});
 }
@@ -69,7 +79,8 @@ export default function MapView({ pin, projects, onPick, onProject, result, sele
   const handlers = useRef({});
   const [overlay, setOverlay] = useState(""); // "", "water_stress", "climate_risk"
   const [wildlife, setWildlife] = useState(false);
-  handlers.current = { onPick, onSelect, onProject, projects, overlay, wildlife };
+  const [population, setPopulation] = useState(false);
+  handlers.current = { onPick, onSelect, onProject, projects, overlay, wildlife, population };
 
   // Lower-risk candidates from "Find a lower-risk spot nearby" (numbered blue pins)
   useEffect(() => {
@@ -101,6 +112,14 @@ export default function MapView({ pin, projects, onPick, onProject, result, sele
       m.addLayer({ id: "overlay", type: "fill", source: "overlay",
         paint: { "fill-color": ["match", ["get", "level"], ...LEVEL_COLORS.flatMap((c, i) => [i, c]), "#ccc"],
           "fill-opacity": 0.45, "fill-outline-color": "#ffffff" } });
+      m.addSource("population", { type: "geojson", data: EMPTY });
+      m.addLayer({ id: "population", type: "fill", source: "population",
+        paint: { "fill-color": ["match", ["get", "level"], ...POP_COLORS.flatMap((c, i) => [i, c]), "#ccc"],
+          "fill-opacity": 0.5, "fill-outline-color": "#ffffff" } });
+      m.addSource("population-detail", { type: "geojson", data: EMPTY });
+      m.addLayer({ id: "population-detail", type: "fill", source: "population-detail",
+        paint: { "fill-color": ["match", ["get", "level"], ...POP_COLORS.flatMap((c, i) => [i, c]), "#ccc"],
+          "fill-opacity": 0.4, "fill-outline-color": "#ffffff" } });
       m.addSource("wildlife", { type: "geojson", data: EMPTY });
       m.addLayer({ id: "wildlife", type: "fill", source: "wildlife",
         paint: { "fill-color": "#16a34a", "fill-opacity": 0.3, "fill-outline-color": "#15803d" } });
@@ -144,22 +163,21 @@ export default function MapView({ pin, projects, onPick, onProject, result, sele
         tip.setLngLat(e.lngLat).setText(e.features[0].properties.label || "Wildlife area").addTo(m);
       });
       m.on("mouseleave", "wildlife", () => tip.remove());
-      // Population tracts: show people + density on hover
-      m.on("mousemove", "overlay", (e) => {
-        if (handlers.current.overlay !== "population") return;
-        if (m.queryRenderedFeatures(e.point, { layers: ["projects"] }).length) return;
-        tip.setLngLat(e.lngLat).setText(e.features[0].properties.label).addTo(m);
-      });
-      m.on("mouseleave", "overlay", () => tip.remove());
+      // Population: show people + density on hover (county or tract)
+      for (const id of ["population", "population-detail"]) {
+        m.on("mousemove", id, (e) => {
+          if (m.queryRenderedFeatures(e.point, { layers: ["projects", "wildlife"] }).length) return;
+          if (id === "population" && m.queryRenderedFeatures(e.point, { layers: ["population-detail"] }).length) return;
+          tip.setLngLat(e.lngLat).setText(e.features[0].properties.label).addTo(m);
+        });
+        m.on("mouseleave", id, () => tip.remove());
+      }
     });
-    // Reload overlays once the map stops moving (debounced, so dragging doesn't fire dozens of requests)
+    // National overlays stay put; only the zoomed-in tract detail reloads after moving (debounced)
     let moveTimer;
     m.on("moveend", () => {
       clearTimeout(moveTimer);
-      moveTimer = setTimeout(() => {
-        loadOverlay(m, handlers.current.overlay);
-        loadOverlay(m, handlers.current.wildlife && "wildlife_areas", "wildlife");
-      }, 300);
+      moveTimer = setTimeout(() => loadTracts(m, handlers.current.population), 300);
     });
     m.on("click", (e) => {
       const proj = m.queryRenderedFeatures(e.point, { layers: ["projects"] })[0];
@@ -178,9 +196,13 @@ export default function MapView({ pin, projects, onPick, onProject, result, sele
     map.current.flyTo({ center: [pin.lon, pin.lat], zoom: Math.max(map.current.getZoom(), 12) });
   }, [pin]);
 
-  // Overlay: only the part inside the current view is downloaded (re-loaded after panning/zooming)
+  // Overlays: whole country, downloaded once when first switched on
   useEffect(() => { loadOverlay(map.current, overlay); }, [overlay]);
   useEffect(() => { loadOverlay(map.current, wildlife && "wildlife_areas", "wildlife"); }, [wildlife]);
+  useEffect(() => {
+    loadOverlay(map.current, population && "population", "population");
+    loadTracts(map.current, population);
+  }, [population]);
 
   // Drop the "drag pin" chip onto the map -> new pin at that spot
   function onDrop(e) {
@@ -234,7 +256,7 @@ export default function MapView({ pin, projects, onPick, onProject, result, sele
       </div>
       <div className="absolute top-3 right-3 w-56 rounded-md bg-white/95 p-2 text-xs shadow">
         <div className="mb-1 font-semibold text-slate-600">Map overlay</div>
-        {[["", "None"], ["water_stress", "Water stress"], ["climate_risk", "Climate risk"], ["population", "Population density"]].map(([k, label]) => (
+        {[["", "None"], ["water_stress", "Water stress"], ["climate_risk", "Climate risk"]].map(([k, label]) => (
           <label key={k} className="flex cursor-pointer items-center gap-2 py-0.5">
             <input type="radio" name="overlay" checked={overlay === k} onChange={() => setOverlay(k)} /> {label}
           </label>
@@ -244,7 +266,22 @@ export default function MapView({ pin, projects, onPick, onProject, result, sele
           <span className="inline-block h-3 w-3 rounded-sm" style={{ background: "#16a34a", opacity: 0.6 }} />
           Wildlife refuges & habitat
         </label>
-        {wildlife && <div className="pl-5 text-slate-400">PAD-US · zoom in to county level to see areas</div>}
+        {wildlife && <div className="pl-5 text-slate-400">PAD-US refuges &amp; habitat areas, whole US</div>}
+        <label className="flex cursor-pointer items-center gap-2 pt-1">
+          <input type="checkbox" checked={population} onChange={(e) => setPopulation(e.target.checked)} />
+          <span className="inline-block h-3 w-3 rounded-sm" style={{ background: POP_COLORS[3], opacity: 0.6 }} />
+          Population density
+        </label>
+        {population && (
+          <div className="pl-5">
+            {POP_LABELS.map((l, i) => (
+              <div key={l} className="flex items-center gap-2">
+                <span className="inline-block h-3 w-3 rounded-sm" style={{ background: POP_COLORS[i] }} /> {l} /km²
+              </div>
+            ))}
+            <div className="text-slate-400">2020 Census · counties, tracts when zoomed in</div>
+          </div>
+        )}
         {overlay && (
           <div className="mt-2 border-t pt-2">
             <div className="mb-1 text-slate-500">{OVERLAYS[overlay].title}</div>

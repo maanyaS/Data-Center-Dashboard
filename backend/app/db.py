@@ -5,6 +5,7 @@ import json
 import os
 import shutil
 import sqlite3
+import time
 from pathlib import Path
 
 import yaml
@@ -100,6 +101,7 @@ def init_db():
         if old and (old["url"], old["where_clause"]) != (l["url"], l["where"]):
             con.execute("DELETE FROM features WHERE layer=?", (l["name"],))
             con.execute("DELETE FROM coverage WHERE layer=?", (l["name"],))
+        _layers_cache["rows"] = None
         con.execute(
             "INSERT OR REPLACE INTO layers (name, title, url, where_clause, label_field, states, scope, color, out_fields) "
             "VALUES (?,?,?,?,?,?,?,?,?)",
@@ -154,12 +156,26 @@ def execute(sql, params=()):
     return cur.lastrowid
 
 
+_layers_cache = {"at": 0, "rows": None}
+
+
 def get_layers(scope=None):
-    sql = "SELECT * FROM layers" + (" WHERE scope = ?" if scope else "")
-    layers = rows(sql, (scope,) if scope else ())
-    for l in layers:
-        l["states"] = l["states"].split(",")
-    return layers
+    """Layer settings (cached in memory for 60 s: they only change when seed.yaml changes)."""
+    if _layers_cache["rows"] is None or time.time() - _layers_cache["at"] > 60:
+        layers = rows("SELECT * FROM layers")
+        for l in layers:
+            l["states"] = l["states"].split(",")
+        _layers_cache.update(at=time.time(), rows=layers)
+    return [dict(l) for l in _layers_cache["rows"] if scope is None or l["scope"] == scope]
+
+
+def get_screening(screening_id):
+    r = rows("SELECT result FROM screenings WHERE id = ?", (screening_id,))
+    return json.loads(r[0]["result"]) if r else None
+
+
+def update_screening(screening_id, result):
+    execute("UPDATE screenings SET result = ? WHERE id = ?", (json.dumps(result), screening_id))
 
 
 def save_screening(name, lat, lon, mw, result):

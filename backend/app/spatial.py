@@ -2,6 +2,7 @@
 
 Distances are computed in EPSG:5070 (Conus Albers, meters), which covers all of NJ and NY.
 """
+import gzip
 import json
 import math
 from concurrent.futures import ThreadPoolExecutor
@@ -26,7 +27,7 @@ STATE_FIPS = dict(zip(
     "AL AK AZ AR CA CO CT DE DC FL GA HI ID IL IN IA KS KY LA ME MD MA MI MN MS MO MT NE NV NH NJ NM NY NC ND OH "
     "OK OR PA RI SC SD TN TX UT VT VA WA WV WI WY PR".split()))
 OPTIONAL_LAYERS = {"census_tracts"}   # only downloaded/checked when the user asks (population)
-NOT_SCREENED = ("counties", "egrid_subregions", "wildlife_areas")   # region layers not turned into findings
+NOT_SCREENED = ("counties", "egrid_subregions", "wildlife_areas", "county_population")   # region layers not turned into findings
 
 # Region overlays: every feature gets a 0-4 "level" (same 5-step color scale for both).
 RATING = {"Very Low": 0, "Relatively Low": 1, "Relatively Moderate": 2, "Relatively High": 3, "Very High": 4}
@@ -40,7 +41,7 @@ def overlay_level(layer_name, props):
         return RATING.get(props.get("RISK_RATNG"))
     if layer_name == "wildlife_areas":
         return 0   # single color
-    if layer_name == POPULATION_LAYER:
+    if layer_name in (POPULATION_LAYER, "county_population"):
         d = density_per_km2(props)
         return None if d is None else sum(d >= b for b in DENSITY_BINS)
     return None
@@ -48,7 +49,7 @@ def overlay_level(layer_name, props):
 
 def overlay_label(layer_name, props, label):
     """Hover text for an overlay feature."""
-    if layer_name == POPULATION_LAYER:
+    if layer_name in (POPULATION_LAYER, "county_population"):
         return f"{label}: {int(props['POP100']):,} people · {round(density_per_km2(props)):,} per km²"
     return label
 
@@ -79,6 +80,34 @@ def overlay_geojson(layer_name, bbox):
     return {"type": "FeatureCollection", "features": feats}
 
 
+NATIONAL_TOLERANCE = {"wildlife_areas": 0.005}   # extra simplification (degrees) for the whole-US view
+_national = {}
+
+
+def national_overlay(layer_name):
+    """Whole-US overlay as gzipped GeoJSON. Built once per server start and kept in memory,
+    so the map downloads each overlay a single time and keeps it while panning/zooming."""
+    if layer_name not in _national:
+        tol = NATIONAL_TOLERANCE.get(layer_name, 0)
+        feats = []
+        for r in db.rows("SELECT label, props, geojson FROM features WHERE layer=?", (layer_name,)):
+            props = json.loads(r["props"])
+            level = overlay_level(layer_name, props)
+            if level is None:
+                continue
+            geom = shape(json.loads(r["geojson"]))
+            if tol:
+                geom = geom.simplify(tol, preserve_topology=True)
+            if geom.is_empty:
+                continue
+            feats.append({"type": "Feature",
+                          "geometry": {"type": geom.geom_type, "coordinates": round_coords(mapping(geom)["coordinates"], 3)},
+                          "properties": {"level": level, "label": overlay_label(layer_name, props, r["label"])}})
+        body = json.dumps({"type": "FeatureCollection", "features": feats}, separators=(",", ":"))
+        _national[layer_name] = gzip.compress(body.encode())
+    return _national[layer_name]
+
+
 # ---------- downloading ----------
 
 def bbox_around(lat, lon, km):
@@ -98,7 +127,7 @@ def fetch_arcgis(url, where, bbox, simplify_deg=0.00002, out_fields="*"):
             "maxAllowableOffset": simplify_deg,
             "resultOffset": offset, "resultRecordCount": 1000,
         }
-        r = requests.get(url.rstrip("/") + "/query", params=params, timeout=60)
+        r = requests.get(url.rstrip("/") + "/query", params=params, timeout=25)   # slow server -> "unknown", not a hang
         r.raise_for_status()
         data = r.json()
         if "error" in data:
@@ -181,15 +210,33 @@ def ensure_region():
 
 def ensure_area(lat, lon, state=None, optional=()):
     """Make sure the site-scope layers for this state are cached around the point. Returns {layer: error}.
-    Optional layers (e.g. population) are only downloaded if listed in `optional`."""
+    Optional layers (e.g. population) are only downloaded if listed in `optional`.
+    Missing layers are downloaded in parallel (network), then saved one at a time (database)."""
     bbox = bbox_around(lat, lon, FETCH_RADIUS_KM)
+    covered = {r["layer"] for r in db.rows(   # one query instead of one per layer
+        "SELECT DISTINCT layer FROM coverage WHERE minx<=? AND miny<=? AND maxx>=? AND maxy>=?", bbox)}
+    todo = [l for l in db.get_layers("site")
+            if l["url"] and l["name"] not in covered
+            and not (state and not applies(l, state))
+            and not (l["name"] in OPTIONAL_LAYERS and l["name"] not in optional)]
+
+    def fetch(layer):
+        try:
+            fields = layer["out_fields"] or layer["label_field"]
+            return layer, fetch_arcgis(layer["url"], layer["where_clause"], bbox, out_fields=fields), None
+        except Exception as e:
+            print(f"[spatial] {layer['name']} download failed: {e}")
+            return layer, None, str(e)
+
     errors = {}
-    for layer in db.get_layers("site"):
-        if (state and not applies(layer, state)) or (layer["name"] in OPTIONAL_LAYERS and layer["name"] not in optional):
-            continue
-        err = download(layer, bbox)
-        if err:
-            errors[layer["name"]] = err
+    with ThreadPoolExecutor(max_workers=8) as pool:
+        for layer, feats, err in pool.map(fetch, todo):
+            if err:
+                errors[layer["name"]] = err
+                continue
+            store_features(layer, feats)
+            db.execute("INSERT INTO coverage VALUES (?,?,?,?,?)", (layer["name"], *bbox))
+            print(f"[spatial] {layer['name']}: cached {len(feats)} features")
     return errors
 
 

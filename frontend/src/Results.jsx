@@ -89,7 +89,17 @@ export default function Results({ result, selectedId, onSelect }) {
         </details>
       </Section>
 
-      <Briefs briefs={briefs} onSelect={onSelect} />
+      {!briefs ? (
+        <Section title="Briefs">
+          <p className="animate-pulse text-sm text-slate-500">Writing developer and community briefs…</p>
+        </Section>
+      ) : briefs.error ? (
+        <Section title="Briefs">
+          <p className="text-sm text-slate-500">Briefs could not be written right now. Re-run the screening to try again.</p>
+        </Section>
+      ) : (
+        <Briefs briefs={briefs} onSelect={onSelect} />
+      )}
     </div>
   );
 }

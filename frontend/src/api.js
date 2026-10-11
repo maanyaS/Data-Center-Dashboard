@@ -13,9 +13,11 @@ const post = (path, body) =>
 
 export const screenSite = (lat, lon, mw, name, population) =>
   post("/screen", { lat, lon, mw, name, population }).then((r) => r.json());
+export const fetchBriefs = (screeningId) => post(`/briefs/${screeningId}`, {}).then((r) => r.json());
 export const findAlternatives = (lat, lon, mw) => post("/alternatives", { lat, lon, mw }).then((r) => r.json());
 export const getProjects = () => call("/projects").then((r) => r.json());
-export const getOverlay = (name, bbox, signal) => call(`/overlay/${name}?bbox=${bbox}`, { signal }).then((r) => r.json());
+export const getOverlay = (name) => call(`/overlay/${name}`).then((r) => r.json());
+export const getTracts = (bbox, signal) => call(`/overlay/population/tracts?bbox=${bbox}`, { signal }).then((r) => r.json());
 export const getAlerts = () => call("/alerts").then((r) => r.json());
 export const speak = (text) => post("/voice", { text }).then((r) => r.blob());
 
