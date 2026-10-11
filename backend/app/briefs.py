@@ -1,7 +1,7 @@
-"""Developer + community briefs, written ONLY from structured results.
+"""Site brief as three short bullet lists (key facts / community actions / developer), written ONLY from structured results.
 
-Every sentence must cite a tag: a finding [F1], a trigger [R1], the estimate [EST],
-or say "unknown". The validator enforces this; on failure we retry, then fall back
+Every bullet must cite a tag: a finding [F1], a trigger [R1], the estimate [EST], a nearby spot [ALT1],
+a community action [ACT1], or say "unknown". The validator enforces this; on failure we retry, then fall back
 to a template brief (always valid, works with no API key).
 
 LLM: Gemini by default, via its OpenAI-compatible API (any compatible provider works). Set in backend/.env:
@@ -14,9 +14,6 @@ import time
 
 import requests
 
-DISCLAIMER = ("This is a screening-level summary from public map data, not a site survey, "
-              "and it does not predict permit outcomes; anything not checked is marked unknown.")
-SENTENCE_SPLIT = re.compile(r"(?<=[.!?])\s+(?=[A-Z])")
 TAG = re.compile(r"\[(F\d+|R\d+|EST|ALT\d+|ACT\d+)\]")
 
 # Things residents can do. General civic steps (not facts about the site), so the LLM may suggest them.
@@ -71,41 +68,49 @@ def facts(findings, triggers, estimates, alts=None):
     }
 
 
-def validate(text, valid_tags):
-    """Return list of problems (empty = OK)."""
+SECTIONS = ("facts", "community", "developer")
+MAX_CHARS = 220   # one short sentence per bullet
+RISK_ORDER = {"high": 0, "medium": 1, "low": 2}
+
+
+def validate(bullets, valid_tags):
+    """Return list of problems (empty = OK). Every bullet: short, and cites a tag or says unknown."""
+    if not isinstance(bullets, list) or not bullets:
+        return ["Section must be a non-empty list of bullets"]
     problems = []
-    for s in SENTENCE_SPLIT.split(text.strip()):
-        if not s.strip():
-            continue
-        tags = TAG.findall(s)
-        if not tags and "unknown" not in s.lower():
-            problems.append(f"No citation: {s[:80]}")
-        for t in tags:
-            if t not in valid_tags:
-                problems.append(f"Unknown tag [{t}] in: {s[:80]}")
+    for b in bullets:
+        tags = TAG.findall(b)
+        if not tags and "unknown" not in b.lower():
+            problems.append(f"No citation: {b[:80]}")
+        if len(b) > MAX_CHARS:
+            problems.append(f"Too long (max {MAX_CHARS} chars): {b[:80]}")
+        problems += [f"Unknown tag [{t}] in: {b[:80]}" for t in tags if t not in valid_tags]
     return problems
 
 
+def agencies(triggers):
+    return ", ".join(dict.fromkeys(t["citation"].split(" ")[0] for t in triggers)) or "the permitting agencies"
+
+
 def template_briefs(findings, triggers, estimates, alts=None):
-    est = (f"Estimated demand is {fmt_range(estimates['power_mwh_per_year'], 'MWh per year')} of electricity "
-           f"and {fmt_range(estimates['water_gal_per_day'], 'gallons per day')} of on-site water [EST].")
+    trig = sorted(triggers, key=lambda t: RISK_ORDER.get(t["delay_risk"], 3))
+    near = sorted((f for f in findings if f["buffer"] in ("site", "1km")), key=lambda f: f.get("distance_m") or 0)
+    est = f"Needs {fmt_range(estimates['water_gal_per_day'], 'gal/day')} of water"
     if "grid" in estimates:
-        est += (f" On the {estimates['grid']['egrid_name']} grid that is about "
-                f"{fmt_range(estimates['co2_tons_per_year'], 'tons of CO2 per year')} and "
-                f"{fmt_range(estimates['power_cost_usd_per_year'], 'US dollars per year')} in electricity [EST].")
-    found = [f"{f['detail'].rstrip('.')} [{f['id']}]." if f["buffer"] != "unknown"
-             else f"{f['title']}: unknown, not checked [{f['id']}]." for f in findings]
-    trig = [f"{t['trigger'].rstrip('.')} ({t['citation']}; delay risk {t['delay_risk']}) [{t['rule_id']}]." for t in triggers]
-    if not trig:
-        trig = ["No likely review triggers were flagged from the layers checked; layers not checked are unknown."]
-    moves = [f"A spot {a['where']} scores {a['score']} instead of {a['original_site_score']} on the same rules "
-             f"and avoids: {', '.join(a['triggers_avoided']) or 'no specific trigger, only lower risk'} [{a['id']}]."
-             for a in alt_facts(alts)]
-    developer = " ".join([DISCLAIMER, *trig, est, *found, *moves])
-    community = " ".join([DISCLAIMER, *found, est,
-                          *(f"A review that may apply: {t['trigger'].rstrip('.')} [{t['rule_id']}]." for t in triggers),
-                          *(f"You can: {a['action']} [{a['id']}]" for a in COMMUNITY_ACTIONS[:3])])
-    return {"developer": developer, "community": community, "source": "template"}
+        est += f" and emits {fmt_range(estimates['co2_tons_per_year'], 't CO2/yr')}"
+    facts_ = [f"{f['detail'].rstrip('.')} [{f['id']}]." for f in near[:4]] + [est + " [EST]."]
+    facts_ += [f"{len(trig)} likely reviews, {sum(t['delay_risk'] == 'high' for t in trig)} high delay risk [{trig[0]['rule_id']}]."] if trig else []
+    community = [f"{COMMUNITY_ACTIONS[0]['action']} [ACT1]"]
+    if trig:
+        community.append(f"Ask {agencies(trig[:3])} to add you to the notice list for: "
+                         f"{trig[0]['trigger'].rstrip('.')} [ACT2] [{trig[0]['rule_id']}].")
+    community.append(f"{COMMUNITY_ACTIONS[2]['action']} [ACT3] [EST]")
+    developer = [f"{t['trigger'].rstrip('.')} - {t['delay_risk']} delay risk [{t['rule_id']}]." for t in trig[:4]]
+    developer += [f"Power cost about {fmt_range(estimates['power_cost_usd_per_year'], 'USD/yr')} [EST]."] if "grid" in estimates else []
+    developer += [f"Consider {a['where']}: score {a['score']} vs {a['original_site_score']}, avoids "
+                  f"{len(a['triggers_avoided'])} review(s); still needs zoning and land checks [{a['id']}]."
+                  for a in alt_facts(alts)[:1]]
+    return {"facts": facts_, "community": community, "developer": developer, "source": "template"}
 
 
 def call_llm(prompt):
@@ -122,20 +127,19 @@ def call_llm(prompt):
     return json.loads(re.search(r"\{.*\}", text, re.S).group(0))
 
 
-PROMPT = """You write two short plain-English briefs about a proposed data center site.
-Use ONLY the facts in the JSON below. Do not add any other facts.
-Every sentence MUST end with a tag citing its source: a finding id like [F1], a trigger id like [R1], or [EST],
-or else the sentence must contain the word "unknown". Never predict whether permits will be approved.
-No headings, no bullet points. Start each brief with this exact sentence: "{disclaimer}"
-- "developer" (6-10 sentences): for the developer, specific and numeric. Give exact distances (meters/km),
-  people nearby, power/water/CO2/cost ranges, each review trigger with its delay risk and agency, and what to
-  check next. If "nearby_lower_risk_spots" is not empty, end by naming the best spot (direction + distance),
-  how its score compares, and which triggers it avoids, cited with its [ALT#] tag; say it still needs zoning
-  and land checks. If the list is empty, say no nearby spot scored lower on the layers checked [EST].
-- "community" (6-10 sentences): for nearby residents, in simple words. Say what is on/near the land and what
-  it means for them, then give 3-4 concrete things they can do, picked from "community_actions" and tied to
-  the specific reviews listed (name the agency or permit), each cited with its [ACT#] tag (and the [R#] tag).
-Reply with JSON only: {{"developer": "...", "community": "..."}}
+PROMPT = """Write a short, scannable brief about a proposed data center site as three lists of bullets.
+Use ONLY the facts in the JSON below. Never predict whether permits will be approved.
+Rules for EVERY bullet: one short sentence (max 25 words), plain English, ends with its source tag(s)
+([F1], [R1], [EST], [ALT1], [ACT1]) or contains the word "unknown". Never repeat a fact in two bullets or two lists.
+Put the most important items first (high delay risk, things ON the site, closest distances, big numbers).
+- "facts" (4-6 bullets): the key facts only: what is on/near the land with distances, people nearby,
+  water and CO2 numbers, how many reviews and how many are high risk.
+- "community" (3-4 bullets): actions residents can take to question or oppose the project, from
+  "community_actions", each naming the specific agency/permit/hearing it applies to. Start each with a verb.
+- "developer" (3-5 bullets): high-risk reviews with the agency and why, power cost, what to check next.
+  If "nearby_lower_risk_spots" is not empty, the last bullet names the best spot (direction + distance),
+  its score vs the original, and what it avoids, tagged [ALT#].
+Reply with JSON only: {{"facts": ["..."], "community": ["..."], "developer": ["..."]}}
 
 FACTS:
 {facts}
@@ -150,9 +154,9 @@ def write_briefs(findings, triggers, estimates, alts=None):
     feedback = ""
     for _ in range(3):
         try:
-            out = call_llm(PROMPT.format(disclaimer=DISCLAIMER, feedback=feedback,
+            out = call_llm(PROMPT.format(feedback=feedback,
                                          facts=json.dumps(facts(findings, triggers, estimates, alts), indent=1)))
-            problems = validate(out["developer"], valid) + validate(out["community"], valid)
+            problems = [p for k in SECTIONS for p in validate(out.get(k), valid)]
         except Exception as e:   # 503 overloaded -> wait and retry; 429 quota / timeout -> use template now
             print(f"[briefs] LLM error: {e}")
             if "429" in str(e) or "timed out" in str(e).lower():
@@ -160,6 +164,6 @@ def write_briefs(findings, triggers, estimates, alts=None):
             time.sleep(2)
             continue
         if not problems:
-            return {"developer": out["developer"], "community": out["community"], "source": "llm"}
-        feedback = "Your last answer was rejected. Fix these sentences:\n" + "\n".join(problems)
+            return {**{k: out[k] for k in SECTIONS}, "source": "llm"}
+        feedback = "Your last answer was rejected. Fix these bullets:\n" + "\n".join(problems)
     return template_briefs(findings, triggers, estimates, alts)

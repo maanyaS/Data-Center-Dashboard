@@ -21,6 +21,11 @@ export default function App() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [alts, setAlts] = useState(null); // nearby lower-risk candidates shown on the map
+  const [mapOnly, setMapOnly] = useState(false); // hide the side panel
+
+  // Browser full screen for the whole app (Esc exits)
+  const toggleFullscreen = () =>
+    document.fullscreenElement ? document.exitFullscreen() : document.documentElement.requestFullscreen?.();
 
   useEffect(() => {
     getProjects().then(setProjects).catch(() => {});
@@ -96,11 +101,15 @@ export default function App() {
               {t === "screen" ? "Screen a site" : "Alerts"}
             </button>
           ))}
+          <button onClick={() => setMapOnly(!mapOnly)} title="Hide or show the side panel"
+            className="rounded-md px-3 py-1.5 text-sm hover:bg-slate-100">{mapOnly ? "Show panel" : "Map only"}</button>
+          <button onClick={toggleFullscreen} title="Full screen (Esc to exit)"
+            className="rounded-md px-3 py-1.5 text-sm hover:bg-slate-100">⛶ Full screen</button>
         </nav>
       </header>
 
       <main className="flex min-h-0 flex-1">
-        <aside className="w-[440px] shrink-0 overflow-y-auto border-r bg-white p-5">
+        <aside className={`${mapOnly ? "hidden" : ""} w-[440px] shrink-0 overflow-y-auto border-r bg-white p-5`}>
           {tab === "alerts" ? (
             <ErrorBoundary><Alerts onOpen={openAlert} /></ErrorBoundary>
           ) : (

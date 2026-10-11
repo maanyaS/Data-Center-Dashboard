@@ -90,12 +90,12 @@ export default function Results({ result, selectedId, onSelect }) {
       </Section>
 
       {!briefs ? (
-        <Section title="Briefs">
-          <p className="animate-pulse text-sm text-slate-500">Writing developer and community briefs…</p>
+        <Section title="Brief">
+          <p className="animate-pulse text-sm text-slate-500">Writing the brief…</p>
         </Section>
       ) : briefs.error ? (
-        <Section title="Briefs">
-          <p className="text-sm text-slate-500">Briefs could not be written right now. Re-run the screening to try again.</p>
+        <Section title="Brief">
+          <p className="text-sm text-slate-500">The brief could not be written right now. Re-run the screening to try again.</p>
         </Section>
       ) : (
         <Briefs briefs={briefs} onSelect={onSelect} />
@@ -104,42 +104,47 @@ export default function Results({ result, selectedId, onSelect }) {
   );
 }
 
+const BRIEF_PARTS = [
+  ["facts", "Key facts", "border-slate-200 bg-white"],
+  ["community", "Community: how to respond", "border-amber-200 bg-amber-50"],
+  ["developer", "Developers: risks & next steps", "border-sky-200 bg-sky-50"],
+];
+// Older saved briefs were paragraphs: show them as one bullet
+const asList = (v) => (Array.isArray(v) ? v : v ? [v] : []);
+
 function Briefs({ briefs, onSelect }) {
-  const [who, setWho] = useState("community");
   const [audio, setAudio] = useState(null);
   const [voiceErr, setVoiceErr] = useState("");
-  const text = briefs[who];
+  const text = BRIEF_PARTS.filter(([k]) => briefs[k])
+    .map(([k, title]) => `${title}\n${asList(briefs[k]).map((b) => `- ${b}`).join("\n")}`).join("\n\n");
 
   function download() {
     const a = document.createElement("a");
     a.href = URL.createObjectURL(new Blob([text], { type: "text/plain" }));
-    a.download = `sitecheck-${who}-brief.txt`;
+    a.download = "sitecheck-brief.txt";
     a.click();
   }
 
   async function listen() {
     setVoiceErr("");
-    try { setAudio(URL.createObjectURL(await speak(text))); } catch (e) { setVoiceErr(e.message); }
+    try { setAudio(URL.createObjectURL(await speak(text.replace(/\s*\[[A-Z]+\d*\]/g, "")))); } catch (e) { setVoiceErr(e.message); }
   }
 
-  // Make [F1] tags clickable
-  const parts = text.split(/(\[(?:F\d+|R\d+|EST|ALT\d+|ACT\d+)\])/);
+  // [F1] tags are clickable (highlight the finding); other tags are small and grey
+  const cite = (b) => b.split(/(\[(?:F\d+|R\d+|EST|ALT\d+|ACT\d+)\])/).map((p, i) => /^\[F\d+\]$/.test(p)
+    ? <button key={i} onClick={() => onSelect(p.slice(1, -1))} className="font-mono text-xs text-emerald-700 underline">{p}</button>
+    : /^\[/.test(p) ? <span key={i} className="font-mono text-[10px] text-slate-400">{p}</span> : p);
 
   return (
-    <Section title="Briefs">
-      <div className="flex gap-1">
-        {["community", "developer"].map((w) => (
-          <button key={w} onClick={() => { setWho(w); setAudio(null); }}
-            className={`rounded-md px-3 py-1 text-sm capitalize ${who === w ? "bg-emerald-600 text-white" : "bg-slate-100"}`}>
-            {w}
-          </button>
-        ))}
-      </div>
-      <p className="text-sm leading-relaxed">
-        {parts.map((p, i) => /^\[F\d+\]$/.test(p)
-          ? <button key={i} onClick={() => onSelect(p.slice(1, -1))} className="font-mono text-xs text-emerald-700 underline">{p}</button>
-          : /^\[/.test(p) ? <span key={i} className="font-mono text-xs text-slate-400">{p}</span> : p)}
-      </p>
+    <Section title="Brief">
+      {BRIEF_PARTS.filter(([k]) => briefs[k]).map(([k, title, style]) => (
+        <div key={k} className={`rounded-md border p-3 ${style}`}>
+          <div className="mb-1 text-xs font-semibold text-slate-600">{title}</div>
+          <ul className="list-disc space-y-1 pl-4 text-sm">
+            {asList(briefs[k]).map((b, i) => <li key={i}>{cite(b)}</li>)}
+          </ul>
+        </div>
+      ))}
       <div className="flex gap-2 text-sm">
         <button onClick={() => navigator.clipboard.writeText(text)} className="rounded-md border px-3 py-1">Copy</button>
         <button onClick={download} className="rounded-md border px-3 py-1">Download</button>
@@ -147,7 +152,10 @@ function Briefs({ briefs, onSelect }) {
       </div>
       {audio && <audio src={audio} controls autoPlay className="w-full" />}
       {voiceErr && <p className="text-xs text-slate-500">{voiceErr}</p>}
-      <p className="text-xs text-slate-400">Written {briefs.source === "llm" ? "by AI" : "from a template"} using only the findings above; every sentence cites its source.</p>
+      <p className="text-xs text-slate-400">
+        Written {briefs.source === "llm" ? "by AI" : "from a template"} using only the findings above; every bullet cites its source.
+        Screening-level only, not a site survey; does not predict permit outcomes.
+      </p>
     </Section>
   );
 }
