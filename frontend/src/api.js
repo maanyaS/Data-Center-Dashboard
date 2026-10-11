@@ -1,12 +1,15 @@
-// All backend calls in one place.
+// All backend calls in one place. VITE_API_URL = the Render URL in production; "/api" locally (Vite proxy).
+const API = (import.meta.env.VITE_API_URL || "/api").replace(/\/$/, "");
+
 async function call(path, options) {
-  const res = await fetch(`/api${path}`, options);
+  const res = await fetch(`${API}${path}`, options);
   if (!res.ok) {
     const body = await res.json().catch(() => ({}));
     throw new Error(body.detail || `Request failed (${res.status})`);
   }
   return res;
 }
+
 
 const post = (path, body) =>
   call(path, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });

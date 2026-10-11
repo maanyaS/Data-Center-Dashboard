@@ -122,3 +122,6 @@ Never commit `.env`. To enable the pre-commit secret check: `git config core.hoo
 - Triggers are likely, not certain. The tool can't see zoning, ownership, buildings or grid capacity.
 - Power, water and CO₂ are ranges, not facility-specific values.
 - Lower-risk spots are areas to look at, not recommended sites.
+
+### Notes
+vercel.json is unused; the frontend deploys from frontend/ and the API runs on Render
