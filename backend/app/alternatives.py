@@ -23,12 +23,13 @@ from . import db, estimates, rules, spatial
 RINGS_KM = (1.0, 1.75, 2.5)
 BEARINGS = ("N", "NE", "E", "SE", "S", "SW", "W", "NW")
 RISK_POINTS = {"high": 3, "medium": 1}
-REGION_CONTEXT = {"water_stress", "climate_risk"}   # shown separately, not as distances
+REGION_CONTEXT = {"water_stress", "climate_risk", "census_tracts"}   # shown separately, not as distances
 # A candidate whose point is INSIDE one of these shapes is skipped (can't build in a wetland, flood zone or park).
 NO_BUILD_LAYERS = {"fema_flood", "nwi_wetlands", "nj_wetlands", "ny_wetlands", "de_wetlands",
                    "protected_areas", "nj_open_space", "ny_protected", "critical_habitat"}
 CAVEAT = ("Screening-level only. Candidates are scored on the same public environmental layers and rules "
-          "as the original site. The tool cannot see zoning, homes, land ownership, power lines or "
+          "as the original site. Power line, substation and population distances are shown for context "
+          "but do not change the score. The tool cannot see zoning, buildings, land ownership or "
           "whether land is for sale, so these are areas to look at, not recommended sites.")
 
 
@@ -49,11 +50,13 @@ def load_layers(lat, lon, state, checked):
     for layer in db.get_layers("site"):
         if not spatial.applies(layer, state) or layer["name"] not in checked:
             continue
-        geoms, labels = [], []
+        geoms, labels, pops = [], [], []
         for f in spatial.features_near(layer["name"], lat, lon, spatial.FETCH_RADIUS_KM):
             geoms.append(transform(spatial.TO_M, shape(json.loads(f["geojson"]))))
             labels.append(f["label"])
-        out[layer["name"]] = {"layer": layer, "geoms": geoms, "labels": labels,
+            pop = (json.loads(f["props"]) or {}).get("POP100")
+            pops.append(float(pop) if pop is not None else None)
+        out[layer["name"]] = {"layer": layer, "geoms": geoms, "labels": labels, "pops": pops,
                               "tree": STRtree(geoms) if geoms else None}
     return out
 
@@ -66,6 +69,17 @@ def screen_cached(lat, lon, layers):
         layer = L["layer"]
         base = {"id": f"F{len(findings) + 1}", "layer": name, "title": layer["title"],
                 "color": layer["color"], "source": layer["url"], "geometry": None}
+        if name == spatial.POPULATION_LAYER:
+            if L["geoms"] and any(p is not None for p in L["pops"]):
+                tracts = list(zip(L["geoms"], L["pops"]))
+                p1 = spatial.population_near(center, tracts, 1000)
+                p5 = spatial.population_near(center, tracts, 5000)
+                findings.append({**base, "buffer": "site", "distance_m": None,
+                                 "population": {"within_1km": p1, "within_5km": p5},
+                                 "detail": f"About {p1:,} people within 1 km and {p5:,} within 5 km (2020 Census, estimate)."})
+            else:
+                findings.append({**base, "buffer": "unknown", "distance_m": None, "detail": "Unknown - no population data."})
+            continue
         if L["tree"] is None:
             findings.append({**base, "buffer": "none", "distance_m": None,
                              "detail": f"No {layer['title']} features found within 5 km."})
@@ -103,6 +117,9 @@ def summarize(lat, lon, findings, triggers, origin=None):
                     if f["buffer"] != "unknown" and f["layer"] not in REGION_CONTEXT},
         "titles": {f["layer"]: f["title"] for f in findings},
     }
+    pop = next((f.get("population") for f in findings if f["layer"] == spatial.POPULATION_LAYER), None)
+    s["people_1km"] = (pop or {}).get("within_1km")
+    s["people_5km"] = (pop or {}).get("within_5km")
     ws = spatial.region_props("water_stress", lat, lon)
     s["water_stress"] = (ws or {}).get("bws_label")
     return s

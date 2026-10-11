@@ -106,6 +106,11 @@ export default function MapView({ pin, projects, onPick, onProject, result, sele
         filter: ["==", ["geometry-type"], "Polygon"],
         paint: { "fill-color": ["get", "color"],
           "fill-opacity": ["case", ["get", "selected"], 0.6, 0.25] } });
+      // Point findings (e.g. substations) as circles
+      m.addLayer({ id: "findings-point", type: "circle", source: "findings",
+        filter: ["==", ["geometry-type"], "Point"],
+        paint: { "circle-color": ["get", "color"], "circle-radius": ["case", ["get", "selected"], 8, 5],
+          "circle-stroke-color": "#fff", "circle-stroke-width": 1.5 } });
       m.addLayer({ id: "findings-line", type: "line", source: "findings",
         paint: { "line-color": ["get", "color"],
           "line-width": ["case", ["get", "selected"], 3, 1] } });

@@ -6,7 +6,14 @@ const fmtM = (m) => (m == null ? "None" : m >= 1000 ? `${(m / 1000).toFixed(1)} 
 const ROWS_FIRST = ["fema_flood", "nj_wetlands", "nwi_wetlands", "ny_wetlands", "de_wetlands",
   "protected_areas", "nj_open_space", "ny_protected", "nj_highlands", "nj_pinelands", "nj_cafra", "critical_habitat"];
 
-function cellClass(m) {
+// For power lines and substations, closer is GOOD (cheaper, faster grid connection)
+const CLOSER_IS_BETTER = ["transmission_lines", "substations"];
+
+function cellClass(m, layer) {
+  if (CLOSER_IS_BETTER.includes(layer)) {
+    if (m == null) return "font-semibold text-red-700";
+    return m <= 2000 ? "text-emerald-700" : "text-amber-700";
+  }
   if (m == null) return "text-emerald-700";
   if (m <= 200) return "font-semibold text-red-700";
   if (m <= 1000) return "text-amber-700";
@@ -52,7 +59,7 @@ export default function Alternatives({ result, onFound, onGo }) {
   const maxScore = Math.max(1, ...cols.map((c) => c.score));
   const all = Object.keys(data.origin.titles).filter((l) => l in data.origin.nearest);
   // Rows where nothing is within 5 km at ANY spot are collapsed into one line
-  const empty = all.filter((l) => cols.every((c) => c.nearest[l] == null));
+  const empty = all.filter((l) => !CLOSER_IS_BETTER.includes(l) && cols.every((c) => c.nearest[l] == null));
   const layers = all.filter((l) => !empty.includes(l))
     .sort((a, b) => (ROWS_FIRST.indexOf(a) + 1 || 99) - (ROWS_FIRST.indexOf(b) + 1 || 99));
 
@@ -95,10 +102,18 @@ export default function Alternatives({ result, onFound, onGo }) {
               <tr key={l} className="border-b border-slate-100">
                 <td className="py-1 pr-2 text-slate-600">{data.origin.titles[l]}</td>
                 {cols.map((c) => (
-                  <td key={c.label} className={`py-1 pr-2 tabular-nums ${cellClass(c.nearest[l])}`}>{fmtM(c.nearest[l])}</td>
+                  <td key={c.label} className={`py-1 pr-2 tabular-nums ${cellClass(c.nearest[l], l)}`}>{fmtM(c.nearest[l])}</td>
                 ))}
               </tr>
             ))}
+            {cols.some((c) => c.people_1km != null) && (
+              <tr className="border-b border-slate-100">
+                <td className="py-1 pr-2 text-slate-600">People within 1 km (2020 Census)</td>
+                {cols.map((c) => (
+                  <td key={c.label} className="py-1 pr-2 tabular-nums">{c.people_1km == null ? "unknown" : c.people_1km.toLocaleString()}</td>
+                ))}
+              </tr>
+            )}
             <tr className="border-b border-slate-100">
               <td className="py-1 pr-2 text-slate-600">Water stress</td>
               {cols.map((c) => <td key={c.label} className="py-1 pr-2">{c.water_stress || "unknown"}</td>)}
