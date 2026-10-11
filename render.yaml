@@ -18,6 +18,9 @@ services:
         sync: false
       - key: LLM_API_KEY
         sync: false
+      # Your GitHub Pages address, e.g. https://maanyas.github.io (no trailing slash)
+      - key: ALLOWED_ORIGINS
+        sync: false
       - key: LLM_BASE_URL
         value: https://generativelanguage.googleapis.com/v1beta/openai
       - key: LLM_MODEL
