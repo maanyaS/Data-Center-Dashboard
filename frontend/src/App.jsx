@@ -91,7 +91,7 @@ export default function App() {
     <div className="flex h-full flex-col bg-slate-50 text-slate-800">
       <header className="flex items-center justify-between border-b bg-white px-5 py-3">
         <h1 className="text-lg font-bold">
-          Site<span className="text-emerald-600">Check</span>
+          Before the <span className="text-emerald-600">Build</span>
           <span className="ml-3 text-sm font-normal text-slate-500">What's on this land before a data center is built?</span>
         </h1>
         <nav className="flex gap-1">

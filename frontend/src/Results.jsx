@@ -148,7 +148,7 @@ function Briefs({ briefs, onSelect }) {
       <div className="flex gap-2 text-sm">
         <button onClick={() => navigator.clipboard.writeText(text)} className="rounded-md border px-3 py-1">Copy</button>
         <button onClick={download} className="rounded-md border px-3 py-1">Download</button>
-        <button onClick={listen} className="rounded-md border px-3 py-1">▶ Listen</button>
+        <button onClick={listen} className="rounded-md border px-3 py-1">▷ Listen</button>
       </div>
       {audio && <audio src={audio} controls autoPlay className="w-full" />}
       {voiceErr && <p className="text-xs text-slate-500">{voiceErr}</p>}

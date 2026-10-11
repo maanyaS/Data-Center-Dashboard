@@ -43,7 +43,7 @@ export default function Search({ projects, onProject, onPlace }) {
           ))}
           {places.map((p) => (
             <button type="button" key={p.label} onClick={() => pick(() => onPlace(p))}
-              className="block w-full px-3 py-2 text-left text-slate-600 hover:bg-slate-50">📍 {p.label}</button>
+              className="block w-full px-3 py-2 text-left text-slate-600 hover:bg-slate-50">🖈 {p.label}</button>
           ))}
           <div className="px-3 py-1.5 text-xs text-slate-400">
             {searching ? "Searching places…" : "Press Enter to search addresses and towns"}

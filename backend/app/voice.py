@@ -10,7 +10,7 @@ def tts(text):
     if not key:
         return None
     voice = os.getenv("ELEVENLABS_VOICE_ID", "21m00Tcm4TlvDq8ikWAM")
-    clean = re.sub(r"\s*\[(F\d+|R\d+|EST)\]", "", text)  # don't read citation tags aloud
+    clean = re.sub(r"\s*\[[A-Z]+\d*\]", "", text)  # don't read citation tags aloud
     r = requests.post(
         f"https://api.elevenlabs.io/v1/text-to-speech/{voice}",
         headers={"xi-api-key": key, "Content-Type": "application/json"},

@@ -102,7 +102,10 @@ export default function MapView({ pin, projects, onPick, onProject, result, sele
     const m = new maplibregl.Map({ container: box.current, style: STYLE, center: [-96, 38.5], zoom: 3.6 });
     map.current = m;
     // The pin can be dragged to a new spot
-    marker.current = new maplibregl.Marker({ color: "#059669", draggable: true });
+    const pinEl = document.createElement("div");
+    pinEl.textContent = "🖈";
+    pinEl.style.cssText = "font-size:30px;line-height:1;cursor:grab;color:#059669;text-shadow:0 1px 2px rgba(0,0,0,.4)";
+    marker.current = new maplibregl.Marker({ element: pinEl, anchor: "bottom", draggable: true });
     marker.current.on("dragend", () => {
       const p = marker.current.getLngLat();
       handlers.current.onPick(p.lat, p.lng);
@@ -247,11 +250,11 @@ export default function MapView({ pin, projects, onPick, onProject, result, sele
       <div className="absolute top-3 left-3 rounded-md bg-white/95 px-3 py-2 text-xs shadow">
         <div className="flex items-center gap-2"><Dot c="#7c3aed" /> Known project (FracTracker / NJ list)</div>
         <div className="flex items-center gap-2"><Dot c="#f97316" /> NYISO queue (approx. county location)</div>
-        <div className="flex items-center gap-2"><Dot c="#059669" /> Your pin (drag to move)</div>
+        <div className="flex items-center gap-2"><span className="text-emerald-600">🖈</span> Your pin (drag to move)</div>
         <div draggable onDragStart={(e) => e.dataTransfer.setData("text/plain", "pin")}
           title="Drag onto the map to place a pin"
           className="mt-2 cursor-grab rounded-md border border-emerald-300 bg-emerald-50 px-2 py-1 text-center font-medium text-emerald-700 active:cursor-grabbing">
-          📍 Drag a pin onto the map
+          🖈 Drag a pin onto the map
         </div>
       </div>
       <div className="absolute top-3 right-3 w-56 rounded-md bg-white/95 p-2 text-xs shadow">
